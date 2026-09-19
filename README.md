@@ -13,92 +13,138 @@ to check the machine's work.
 
 ---
 
-> ### ⚠️ Status: early
+> ### ⚠️ Status: the pipeline runs, the intelligence isn't wired up
 >
-> This repo is at **Phase 0**. The only thing here is a standalone script that
-> measures how well Whisper handles real Lebanese Arabic voice notes — the
-> question that decides whether the rest is worth building. There is no Laravel
-> app yet. Everything below describes what exists today; the README grows as
-> features become real.
+> Upload works, the job chain runs, and you can watch a note move through every
+> status to `done`. But **no AI service is called yet** — the transcription and
+> analysis jobs are deliberate placeholders that sleep and advance the status.
+> Whisper has been validated separately (see below); connecting it is the next
+> phase. Everything documented here is built and tested.
 
 ---
 
-## Why start with a test script
+## Does Whisper actually handle Lebanese Arabic?
 
-Arabic dialect is the hard case. Lebanese is not Modern Standard Arabic, it's
-full of French and English loanwords, and speech recognition models are trained
-on far more MSA than anything my aunt says. If Whisper can't produce a usable
-transcript of a real voice note, no amount of clever summarization downstream
-saves it.
+That question decided whether the rest was worth building, so it got answered
+first, before any framework.
 
-So before any framework, any database, any queue: measure it.
+`transcribe-test.php` is a standalone script — no framework, no composer — that
+runs real audio through the same ffmpeg normalization the production pipeline
+uses, sends it to Whisper, and reports what came back.
 
-`transcribe-test.php` takes real audio, runs it through the same normalization
-the production pipeline will use, sends it to Whisper, and reports what came
-back — detected language, wall time against realtime, word and segment counts,
-rough cost, and the transcript itself.
+Tested against natural Lebanese dialect speech, the answer was yes, with one
+important caveat that shaped the design:
 
-## Running the Phase 0 probe
+**The prompt is load-bearing.** The same audio transcribed without a prompt
+hallucinated an opening phrase and leaked non-Arabic characters into Arabic text.
+With a prompt seeded with expected vocabulary, it did neither. So the
+transcription step will always send one — there is no unprompted code path.
 
-**You need:** PHP 8.3 with the `curl` extension, and `ffmpeg` on your PATH.
-The script runs without ffmpeg but sends the original file unmodified, which
-tells you less.
+A second finding: segment boundaries are not stable. The same three minutes
+produced 66 segments unprompted and 9 prompted. Segments get stored, but nothing
+in the app is allowed to depend on them.
+
+## How it works
+
+```
+POST /api/voice-notes                    returns immediately with a token
+  │
+  ├─ validate: size, type, duration      ← on the ORIGINAL upload, before dispatch
+  └─ queue: NormalizeAudio → TranscribeAudio → AnalyzeTranscript → NotifyReady
+
+GET /api/voice-notes/{token}             poll this to watch status advance
+```
+
+The upload endpoint never blocks. Every slow step runs in a queued job, and each
+job updates the note's status so the result page can follow along:
+
+```
+pending → transcribing → analyzing → done
+```
+
+...or `failed`, with a readable sentence explaining what went wrong. Exception
+text never reaches the user — it can contain file paths, and later, data derived
+from private audio.
+
+**Duration is measured twice, on purpose.** `duration_seconds` is the original
+upload — that's what the 20-minute limit checks and what you get shown.
+`normalized_duration_seconds` is what survived silence trimming and actually got
+sent for transcription — that's what gets billed. Conflating them would either
+let over-length notes through or charge against the wrong number.
+
+**Result URLs aren't guessable.** The share token is 40 hex characters from a
+CSPRNG, and it's the only thing protecting a private message.
+
+## Running it locally
+
+You need exactly two things: **PHP 8.3** and **ffmpeg**. No database server, no
+Redis, no Docker.
 
 ```bash
+composer install
 cp .env.example .env
-# set OPENAI_API_KEY in .env
+php artisan key:generate
+
+touch database/database.sqlite      # set DB_DATABASE to its absolute path in .env
+php artisan migrate
 ```
 
-Drop some real voice notes into `samples/` (gitignored — audio and transcripts
-never get committed), then:
+Then, in two terminals:
 
 ```bash
-php transcribe-test.php samples/teta.m4a
+php artisan serve
+php artisan queue:work
 ```
 
-```
-========================================================================
-  teta.m4a
-========================================================================
-  source     4.2 MB  ·  9:07
-  normalized 8.7 MB  ·  16000Hz mono  ·  7:41 after silence trim  ·  2.1s
-  model      whisper-1  ·  language hint: auto detect
-  ...
+Upload something:
 
-  detected   arabic  (RTL - result page must flip direction)
-  took       18.4s  (25.1x realtime)
-  words      1247  ·  segments: 168
-  cost       ~$0.0461
+```bash
+curl -X POST http://127.0.0.1:8000/api/voice-notes \
+  -H 'Accept: application/json' \
+  -F 'file=@note.m4a' -F 'language_hint=ar'
 ```
 
-Useful flags:
+That returns a token. Poll it and watch the status move:
 
-| Flag | What it does |
-| --- | --- |
-| `--language=ar` | Skip auto detection and force a language hint |
-| `--model=NAME` | Try a different transcription model |
-| `--prompt="..."` | Nudge Whisper on spellings of names and places |
-| `--no-normalize` | Send the original file, skipping ffmpeg |
-| `--save` | Write the full JSON response to `out/` |
-| `--quiet` | Print only the transcript |
+```bash
+curl http://127.0.0.1:8000/api/voice-notes/<token> -H 'Accept: application/json'
+```
 
-`--save` is opt-in on purpose. Voice notes are private messages; nothing is
-written to disk unless you ask for it.
+Run the tests with `php artisan test`.
 
-## Where it's going
+### Trying the Whisper probe
 
-The shape of the thing, once built: an upload returns immediately with a token,
-and the slow work — normalize, transcribe, analyze — happens in queued jobs while
-the page watches progress live. Every AI service sits behind an interface, so
-swapping hosted Whisper for a self-hosted `whisper.cpp` is a one-line change.
+Requires an `OPENAI_API_KEY` in `.env`. Drop audio into `samples/` (gitignored,
+as is `out/` — real voice notes and their transcripts never get committed):
 
-**Planned stack:** Laravel 12 · PHP 8.3 · SQLite · Livewire · ffmpeg · Whisper.
+```bash
+php transcribe-test.php samples/note.m4a
+php transcribe-test.php --language=ar --prompt="names, places you expect" samples/note.m4a
+```
 
-Deliberately boring, and deliberately cheap to start: SQLite instead of a
-database server, Laravel's database queue driver instead of Redis, polling
-instead of WebSockets. Running it locally should need PHP and ffmpeg and nothing
-else. Swapping in MySQL, Redis or Reverb later is a config change, not a
-rewrite.
+`--save` writes the full response to `out/`. It's opt-in: voice notes are private
+messages, so nothing touches disk unless you ask.
+
+## Design rules
+
+Some constraints that are deliberate rather than accidental:
+
+- **Every external AI service sits behind an interface** in `app/Contracts`, with
+  implementations in `app/Services`. Swapping hosted Whisper for a self-hosted
+  `whisper.cpp` is a binding change, not a rewrite.
+- **Nothing assumes SQLite, the database queue driver, or polling.** Those are
+  the cheap defaults. `DB_CONNECTION=mysql`, `QUEUE_CONNECTION=redis` and
+  broadcasting over Reverb are all config changes, kept open on purpose.
+- **Transcripts are never logged.** They're private messages.
+- **Language agnostic.** Arabic dialect is the hardest test case, not a special
+  code path. The result page will flip to RTL when the detected language calls
+  for it.
+
+## Stack
+
+Laravel 12 · PHP 8.3 · SQLite · Livewire · ffmpeg · Whisper
+
+Deliberately boring, and deliberately cheap to start.
 
 ## License
 
