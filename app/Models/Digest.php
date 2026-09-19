@@ -20,6 +20,7 @@ class Digest extends Model
             'questions' => 'array',
             'entities' => 'array',
             'action_items' => 'array',
+            'notes' => 'array',
             'urgency' => Urgency::class,
             'tokens_used' => 'integer',
         ];

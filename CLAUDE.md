@@ -71,8 +71,14 @@ voice_notes   id, user_id (nullable), public_token, original_filename,
 transcripts   id, voice_note_id, full_text (longtext), segments (json), word_count
 
 digests       id, voice_note_id, summary (json), questions (json), entities (json),
-              action_items (json), urgency enum (low|normal|high), model_used,
-              tokens_used
+              action_items (json), notes (json), urgency enum (low|normal|high),
+              model_used, tokens_used
+
+              notes  string[] - anything the model could not make out, or where
+                     the transcript was too garbled to summarize confidently.
+                     Empty array when clean, never null. The result page shows
+                     it as a small "some parts were unclear" line, not a
+                     prominent error.
 
 usage_logs    id, user_id (nullable), ip_hash, voice_note_id, duration_seconds,
               cost_estimate
@@ -344,3 +350,19 @@ The real use case is a phone voice note with background noise. Not yet tested.
   Phase 4. This does not conflict with the no-`VITE_`-prefix rule, which is about
   environment *variables* being inlined into the browser bundle. Confirmed: no
   variable in this project carries the prefix.
+
+---
+
+## Pre-Phase-2 decisions
+
+- **`CLAUDE.md` is tracked in git as of 2026-09-19.** It carries no key material,
+  only prose describing the rotation incident, and the decisions log is worth
+  having in history. `.env` stays ignored.
+- **`digests.notes` added** (`string[]`, json column, nullable at the database
+  level but always written as an array). This is the landing place for the
+  Phase 0 finding that the analysis prompt must flag unclear passages rather
+  than invent meaning - an instruction to flag is useless without somewhere for
+  the flag to go. Phase 3 must populate it, and the schema validation must
+  require the key to be present even when empty. Presentation is deliberately
+  quiet: a small "some parts were unclear" line, never an error state. A digest
+  with notes is still a good digest.

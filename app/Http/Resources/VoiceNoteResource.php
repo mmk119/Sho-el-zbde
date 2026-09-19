@@ -37,6 +37,10 @@ class VoiceNoteResource extends JsonResource
                 'questions' => $this->digest->questions,
                 'entities' => $this->digest->entities,
                 'action_items' => $this->digest->action_items,
+                // Always an array so the frontend can count() it without a
+                // guard. Rendered as a quiet "some parts were unclear" line,
+                // not an error.
+                'notes' => $this->digest->notes ?? [],
                 'urgency' => $this->digest->urgency->value,
             ]),
         ];
