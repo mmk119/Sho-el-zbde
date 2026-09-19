@@ -50,6 +50,52 @@ return [
     |--------------------------------------------------------------------------
     */
 
+    /*
+    |--------------------------------------------------------------------------
+    | Normalization
+    |--------------------------------------------------------------------------
+    |
+    | The same filter chain transcribe-test.php used in Phase 0. Keeping these
+    | identical is what makes the Phase 0 measurements mean anything.
+    |
+    */
+
+    'normalization' => [
+        'silence_duration' => env('AUDIO_SILENCE_DURATION', '1.5'),
+        'silence_threshold' => env('AUDIO_SILENCE_THRESHOLD', '-40dB'),
+        'timeout_seconds' => (int) env('AUDIO_NORMALIZE_TIMEOUT', 300),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Transcription
+    |--------------------------------------------------------------------------
+    |
+    | The prompt is NOT optional. Phase 0 measured the unprompted path
+    | hallucinating a phantom opening phrase and leaking non-Arabic characters
+    | into Arabic text. The default below seeds Lebanese dialect markers plus
+    | the app name; the upload form may append names and places, but nothing may
+    | produce an empty prompt.
+    |
+    */
+
+    'transcription' => [
+        'driver' => env('TRANSCRIPTION_DRIVER', 'openai'),
+        'model' => env('TRANSCRIPTION_MODEL', 'whisper-1'),
+        'timeout_seconds' => (int) env('TRANSCRIPTION_TIMEOUT', 600),
+
+        'prompt' => env('TRANSCRIPTION_PROMPT', 'Sho el Zbde. شو الزبدة؟ حكي لبناني عامي: شو، هيك، هلق، كتير، منيح، بدي، عم، لسا، يلا، حبيبي، إن شاء الله، دغري، بلشيت، ناطر، هيدا، مبلا، خلص، معليش، تكرم، بكرا، مبارح، شوي.'),
+
+        // Per-minute list price. Config, not a constant, precisely so that a
+        // price change or a different provider does not mean editing code.
+        'cost_per_minute_usd' => (float) env('TRANSCRIPTION_COST_PER_MINUTE_USD', 0.006),
+    ],
+
+    'openai' => [
+        'key' => env('OPENAI_API_KEY'),
+        'base_url' => env('OPENAI_BASE_URL', 'https://api.openai.com/v1'),
+    ],
+
     'accepted_mimes' => [
         'audio/mpeg', 'audio/mp4', 'audio/x-m4a', 'audio/aac', 'audio/ogg',
         'audio/opus', 'audio/wav', 'audio/x-wav', 'audio/webm', 'audio/flac',

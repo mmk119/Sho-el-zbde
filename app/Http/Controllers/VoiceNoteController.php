@@ -9,6 +9,7 @@ use App\Jobs\AnalyzeTranscript;
 use App\Jobs\NormalizeAudio;
 use App\Jobs\NotifyReady;
 use App\Jobs\TranscribeAudio;
+use App\Models\UsageLog;
 use App\Models\VoiceNote;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Bus;
@@ -30,7 +31,19 @@ class VoiceNoteController extends Controller
             'storage_path' => $upload->store('voice-notes'),
             'duration_seconds' => $request->durationSeconds,
             'language_hint' => $request->input('language_hint'),
+            'prompt_hint' => $request->input('prompt_hint'),
             'status' => VoiceNoteStatus::Pending,
+        ]);
+
+        /*
+         * Opened here because ip_hash only exists in request context, closed out
+         * by TranscribeAudio once the billable duration is known. One row per
+         * note, which is also what Phase 6 will count for per-IP rate limiting.
+         */
+        UsageLog::create([
+            'user_id' => $note->user_id,
+            'ip_hash' => UsageLog::hashIp($request->ip()),
+            'voice_note_id' => $note->id,
         ]);
 
         Bus::chain([

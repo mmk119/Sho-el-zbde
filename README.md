@@ -13,13 +13,13 @@ to check the machine's work.
 
 ---
 
-> ### ⚠️ Status: the pipeline runs, the intelligence isn't wired up
+> ### ⚠️ Status: it transcribes, it doesn't summarise yet
 >
-> Upload works, the job chain runs, and you can watch a note move through every
-> status to `done`. But **no AI service is called yet** — the transcription and
-> analysis jobs are deliberate placeholders that sleep and advance the status.
-> Whisper has been validated separately (see below); connecting it is the next
-> phase. Everything documented here is built and tested.
+> Upload, normalization and transcription are real — send a voice note and you
+> get back a transcript with the detected language. **The digest is not built
+> yet**: the analysis step is still a placeholder, so `summary`, `questions`
+> and the rest come back empty. Everything else documented here works and is
+> tested.
 
 ---
 
@@ -124,6 +124,29 @@ php transcribe-test.php --language=ar --prompt="names, places you expect" sample
 
 `--save` writes the full response to `out/`. It's opt-in: voice notes are private
 messages, so nothing touches disk unless you ask.
+
+## Transcription
+
+Audio is converted to mono 16kHz `pcm_s16le` with long silences trimmed
+(1.5s at -40dB) before anything is sent — the same ffmpeg filter chain the probe
+above used, so its measurements still apply to the real pipeline.
+
+**The prompt is never empty.** A Lebanese-dialect default lives in
+`config/shoelzbde.php`, and an upload may append names and places through an
+optional `prompt_hint` field. There is no code path that transcribes without a
+prompt — the interface has no parameter that could express it.
+
+Failures are sorted into three kinds, because they deserve different treatment:
+
+| Failure | Handling | Detail |
+| --- | --- | --- |
+| `429` rate limited | wait, then retry | honours `Retry-After`, clamped to 1–300s |
+| `408`, `5xx`, network | transient, retry | backoff 10s → 30s → 60s |
+| other `4xx` | permanent, fail now | retrying a rejected request helps nobody |
+
+The job runs under a 30-minute window rather than a fixed attempt count, with a
+budget of three real errors. Being told to wait repeatedly is fine; failing
+three times is not. Rate limiting doesn't spend the error budget.
 
 ## Design rules
 

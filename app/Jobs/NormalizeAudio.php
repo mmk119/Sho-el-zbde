@@ -2,15 +2,18 @@
 
 namespace App\Jobs;
 
+use App\Contracts\AudioNormalizer;
 use App\Enums\VoiceNoteStatus;
+use App\Exceptions\AudioNormalizationFailed;
 use App\Jobs\Concerns\TracksVoiceNoteProgress;
 use App\Models\VoiceNote;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
+use Illuminate\Support\Facades\Storage;
 
 /**
- * Phase 1 stub. Phase 2 replaces the sleep with ffmpeg: convert to mono 16kHz
- * wav, trim long silences, then record normalized_duration_seconds.
+ * Converts the upload to mono 16kHz pcm_s16le and trims long silences, using
+ * the same ffmpeg filter chain transcribe-test.php used in Phase 0.
  */
 class NormalizeAudio implements ShouldQueue
 {
@@ -19,11 +22,13 @@ class NormalizeAudio implements ShouldQueue
 
     public int $tries = 3;
 
+    public array $backoff = [5, 20];
+
     public function __construct(public VoiceNote $voiceNote)
     {
     }
 
-    public function handle(): void
+    public function handle(AudioNormalizer $normalizer): void
     {
         $note = $this->voiceNote->fresh();
 
@@ -31,11 +36,28 @@ class NormalizeAudio implements ShouldQueue
             return;
         }
 
-        sleep(2);
+        $target = 'voice-notes/normalized/'.$note->public_token.'.wav';
 
-        // normalized_duration_seconds stays null until Phase 2 actually runs
-        // ffmpeg. Writing the original duration here would be a fabricated
-        // billing number, and usage_logs reads this column.
+        try {
+            $normalized = $normalizer->normalize(
+                Storage::path($note->storage_path),
+                Storage::path($target),
+            );
+        } catch (AudioNormalizationFailed $e) {
+            $note->markFailed($this->failureMessage());
+
+            // Rethrow so the queue records the real cause for the operator while
+            // the user sees only the sentence above.
+            throw $e;
+        }
+
+        $note->forceFill([
+            'normalized_storage_path' => $target,
+            // The real measured number this time - this is what gets sent for
+            // transcription and therefore what we are billed on.
+            'normalized_duration_seconds' => $normalized->durationSeconds,
+        ])->save();
+
         $this->advance($note, VoiceNoteStatus::Transcribing);
     }
 

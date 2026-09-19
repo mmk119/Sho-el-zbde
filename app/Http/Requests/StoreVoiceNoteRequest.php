@@ -26,6 +26,11 @@ class StoreVoiceNoteRequest extends FormRequest
                 'mimetypes:' . implode(',', config('shoelzbde.accepted_mimes')),
             ],
             'language_hint' => ['nullable', 'string', 'max:16', 'regex:/^[a-zA-Z-]+$/'],
+
+            // Names and places the uploader expects to hear. Appended to the
+            // mandatory default prompt - optional for them, never optional for
+            // the transcription call.
+            'prompt_hint' => ['nullable', 'string', 'max:500'],
         ];
     }
 

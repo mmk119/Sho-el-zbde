@@ -134,7 +134,7 @@ page flips to RTL when the detected language is Arabic (or any RTL script).
 | --- | --- | --- |
 | 0 | `transcribe-test.php` — standalone Whisper quality probe | **complete** |
 | 1 | Laravel install, migrations, models, both endpoints, job chain stubbed | **complete** |
-| 2 | Real NormalizeAudio + TranscribeAudio behind `TranscriptionService` | not started |
+| 2 | Real NormalizeAudio + TranscribeAudio behind `TranscriptionService` | **complete** |
 | 3 | AnalyzeTranscript with strict JSON validation behind `AnalysisService` | not started |
 | 4 | Livewire frontend: upload, progress, result | not started |
 | 5 | Polling the GET endpoint for progress | not started |
@@ -191,9 +191,9 @@ no composer. Reads `.env` itself, normalizes with the exact ffmpeg filter chain
 
 ### Not built
 
-Phases 2–7. Specifically: no AI API is called anywhere in the codebase yet, the
-jobs are sleeps, `usage_logs` has no writer, there is no frontend, no rate
-limiting, no cleanup job and no Horizon.
+Phases 3–7. `AnalyzeTranscript` and `NotifyReady` are still sleeps — no LLM is
+called anywhere. No frontend, no rate limiting, no expiry enforcement, no
+cleanup job, no Horizon.
 
 ### Toolchain (installed 2026-09-19)
 
@@ -366,3 +366,50 @@ The real use case is a phone voice note with background noise. Not yet tested.
   require the key to be present even when empty. Presentation is deliberately
   quiet: a small "some parts were unclear" line, never an error state. A digest
   with notes is still a good digest.
+
+---
+
+## Phase 2 decisions
+
+- **Two new columns on `voice_notes`.** `normalized_storage_path` because the
+  original and the normalized wav have to coexist — the original is what the
+  user plays back and what `duration_seconds` was measured against, so
+  normalization cannot overwrite it. `prompt_hint` because the upload form is
+  allowed to append names and places to the mandatory prompt, and that string
+  has to survive until the job runs.
+- **The prompt invariant is enforced in three places**, deliberately redundantly:
+  `TranscriptionPrompt::build()` never returns empty (falling back to the app
+  name if config is somehow blank), `OpenAiTranscriptionService` throws if
+  handed a blank prompt, and the interface has no parameter that can express
+  "no prompt". Phase 0 showed the unprompted path is worse, so it should be
+  hard to reach by accident.
+- **Errors are sorted into three kinds**, because they want different handling:
+  `TranscriptionRateLimited` (wait and retry — not a failure),
+  `TranscriptionUnavailable` (transient: 408, 5xx, connection — retry), and
+  `TranscriptionRejected` (permanent: 4xx — fail immediately). Retrying an
+  expired API key for thirty minutes helps nobody.
+- **Retry policy on `TranscribeAudio`:** `retryUntil()` of 30 minutes rather
+  than a fixed `$tries`, `maxExceptions = 3`, backoff `[10, 30, 60]`. A 429
+  calls `release()` with the `Retry-After` value clamped to 1–300s, which does
+  **not** spend the exception budget — so being told to wait many times is fine,
+  while three real errors still fail fast. Without the clamp a hostile or buggy
+  `Retry-After` could park a job for hours.
+- **Response bodies are never put into exception messages.** The body can echo
+  the prompt, which carries user-supplied names. There is a test asserting a
+  400's body does not reach the exception.
+- **`usage_logs` is opened at upload and closed at transcription.** `ip_hash`
+  only exists in request context; the billable duration only exists after
+  normalization. One row per note, written by `updateOrCreate`, which is also
+  what Phase 6 will count for per-IP rate limiting.
+- **`cost_per_minute_usd` is config, not a constant.** This resolves the Phase 0
+  open question: the throwaway `0.006` from `transcribe-test.php` was not copied
+  into app code, it became `TRANSCRIPTION_COST_PER_MINUTE_USD`.
+- **The normalizer has real-ffmpeg tests** that build a fixture with a 6 second
+  silence in the middle and assert the output is mono/16kHz/pcm_s16le and
+  measurably shorter. Everything else in the suite fakes ffmpeg; a typo in the
+  filter chain would otherwise only surface in production.
+- **Confirmed on real audio 2026-09-19:** the 3 minute interview produced
+  `normalized_duration_seconds` 180 against `duration_seconds` 180 — silence
+  trimming saved nothing, exactly as the Phase 0 finding predicted for
+  continuous speech. The column is doing its job; it simply is not always
+  smaller. Do not treat equality as a bug.
