@@ -1,0 +1,45 @@
+# Working brief for Claude — local only
+CLAUDE.md
+
+# Environment
+.env
+.env.backup
+.env.production
+.env.*.local
+
+# Dependencies
+/vendor
+/node_modules
+/public/build
+/public/hot
+/public/storage
+
+# Laravel
+/storage/*.key
+/storage/pail
+/storage/app/private
+/storage/app/public
+/storage/framework/cache/*
+/storage/framework/sessions/*
+/storage/framework/views/*
+/storage/logs/*
+/bootstrap/cache/*
+/.phpunit.cache
+.phpunit.result.cache
+Homestead.json
+Homestead.yaml
+auth.json
+
+# Phase 0 scratch — real voice notes and their transcripts never get committed
+/samples/*
+!/samples/.gitkeep
+/out/
+
+# Editors / OS
+/.idea
+/.vscode
+/.fleet
+/.nova
+/.zed
+.DS_Store
+Thumbs.db
