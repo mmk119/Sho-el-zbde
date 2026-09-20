@@ -192,8 +192,13 @@ enforced at read time (410 from the API, a plain page on the web). `zbde:purge`
 scheduled daily, deleting both audio files and the note. The normalized wav is
 deleted as soon as transcription succeeds.
 
-**169 tests, 364 assertions.** Including five that drive the real ffmpeg binary,
+**192 tests, 408 assertions.** Including five that drive the real ffmpeg binary,
 and a suite covering the three failure modes end to end.
+
+**The MCP server** (`mcp/`, Node + TypeScript, stdio). A client of the HTTP API
+and nothing else - it holds no credentials. Two tools: `submit_voice_note` and
+`get_digest`. Separate npm project; nothing in the Laravel app knows it exists.
+Its README carries the Claude Desktop config JSON.
 
 ### Not built
 
@@ -903,3 +908,135 @@ a quality decision rather than a plumbing one:
 
 Neither should be changed without running the Phase 0 probe against real
 dialect audio first.
+
+---
+
+## The prompt echo, and what a Whisper prompt actually is
+
+**The fourth time the only way to find something was to run it.** Found through
+the MCP server, on its first real call, by passing names on an Arabic note.
+
+### What happened
+
+An Arabic note with `prompt_hint` came back as a 48 word transcript for three
+minutes of speech, and the transcript was the prompt repeating: the same
+comma-separated names over and over. The digest built on top of it was
+grammatical, confident and entirely fictional - "repeated mention of the
+Lebanese Forces, Beirut and the Chouf".
+
+Isolated with one controlled upload each:
+
+| | words |
+| --- | --- |
+| `ar`, no names | 251, correct |
+| `ar` + Arabic names | 48, prompt echo |
+
+The prompt went from 172 to 203 characters. **Thirty-one characters, and it
+flipped.** So it was never about length.
+
+### The actual mechanism
+
+A Whisper `prompt` is not an instruction and not a glossary. It is a
+**continuation prompt**: the model is told this is the transcript of audio that
+came immediately before, and its job is to carry on from it.
+
+The old prompt was `حكي لبناني عامي: شو، هيك، هلق، كتير، ...` - a label followed
+by twenty-odd comma-separated words. Read as a transcript, that is *a list in
+progress*. The model continued the list. Appending the uploader's names made the
+list longer and the pattern more obvious, which is why adding names is what
+tipped it over.
+
+This also explains the earlier language bug, which had the same root: an Arabic
+prompt is Arabic *preceding speech*, so the natural continuation is more Arabic,
+whatever the audio says. Both bugs are the same misunderstanding of what the
+parameter is.
+
+### The fix: shape, not length
+
+The prompt now reads like somebody talking, with the dialect markers occurring
+naturally inside ordinary sentences rather than being listed. The uploader's
+names are folded into a sentence through a per-language template
+(`hint_templates` in config, `:names` as the placeholder) instead of being
+appended as more list items.
+
+The auto-detect template is deliberately bare - just the names and a full stop.
+Any framing words would be a language signal, and on auto-detect the language is
+exactly what is not yet known.
+
+Measured after the change, same audio, same baseline of 251 words:
+
+| case | words | vs 251 | prompt overlap | detected |
+| --- | --- | --- | --- | --- |
+| `ar`, no names | 243 | -8 | 8% | arabic |
+| `ar` + Arabic names | 267 | +16 | 9% | arabic |
+| `ar` + Latin names | 272 | +21 | 15% | arabic |
+| auto detect + names | 253 | +2 | 0% | arabic |
+
+The previously broken case went from 48 words at 75% overlap to 267 at 9%. The
+spread of +-21 words across the four is ordinary Whisper run-to-run variance.
+
+### The guard, so it cannot regress quietly
+
+`TranscriptSanityCheck` runs before a transcript is stored, and refuses on two
+independent signals:
+
+- **Too sparse for its audio.** Floor of **25 words per minute**. Speech runs
+  100-150, a slow halting speaker clears 60, and the echo ran 16. The floor sits
+  at a quarter of slow speech so it only ever catches a genuine collapse. Clips
+  under 30 seconds are exempt: "call me back" is legitimately three words, and a
+  rate is meaningless over so little audio.
+- **Too much of it came from the prompt.** Ceiling of **60% word overlap**.
+  Measured on real data: a genuine transcript of this audio shares 9% of its
+  words with the prompt, the echo shared 75%. The threshold sits in a very wide
+  gap, which matters because the prompt is deliberately chosen to contain words
+  the speaker will use - some overlap is the point.
+
+Both are config, not constants, and a failure marks the note failed rather than
+storing anything. That is the right trade: a failed note says so plainly, while
+a wrong transcript produces a digest that looks entirely trustworthy.
+
+### Why the guard is worth more than the fix
+
+The reshaped prompt is a fix for a known failure. The guard is protection
+against the *class* of failure, including the ones not yet seen. A prompt echo
+is well-formed text of the right language: it passes every structural check
+there is, and the schema validation in Phase 3 would happily summarise it. The
+only things that give it away are statistical, which is why they are what gets
+measured.
+
+---
+
+## The audio player read 0:00 / 0:00
+
+Not the route. `Content-Length`, `Accept-Ranges: bytes`, the inline disposition
+and the content type were all already correct, and a Range request already
+returned 206.
+
+The cause was `preload="none"` on the `<audio>` element. With it the browser
+fetches nothing until play is pressed, so `duration` is `NaN`, the control shows
+0:00 / 0:00, and the scrubber does nothing - even though the header above it
+shows the real duration, which is read from the database rather than the file.
+
+Now `preload="metadata"`. Verified in a real browser without pressing play:
+`readyState` 4, `duration` 180, one seekable range ending at 180, and scrubbing
+to 90s worked while still paused.
+
+---
+
+## A process note on editing config/shoelzbde.php
+
+**The same mistake was made twice**, and the second time cost about $0.12 of API
+credit and a wasted test run.
+
+Both times the transcription block was replaced by locating a start anchor in
+its comment header and an end anchor at `'openai' => [`. The `analysis` block
+sits between those two points, so both times it was silently deleted. Nothing
+failed loudly: `config('shoelzbde.analysis.driver')` simply returned null, the
+`AnalysisService` binding threw, and every note failed at the analysis step
+with a message about summarising - which reads like a model problem, not a
+config problem.
+
+If this file is edited programmatically again, **anchor on the block being
+changed, never on its neighbour**, and afterwards assert that every expected key
+still resolves and that both service bindings construct. The test suite catches
+it, but only if it is run before spending money on a live test.

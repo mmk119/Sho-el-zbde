@@ -273,7 +273,16 @@
             --}}
             <aside class="mt-12 lg:mt-0">
 
-            <audio controls preload="none" class="player mb-10" src="{{ route('voice-notes.audio', $note->public_token) }}">
+            {{--
+                preload="metadata", not "none". With "none" the browser fetches
+                nothing until play is pressed, so duration is NaN: the control
+                reads 0:00 / 0:00 and the scrubber does nothing. "metadata"
+                costs one small range request and buys a real duration and a
+                working scrubber before playback. The route already answers
+                ranges and sends Content-Length, so this is all the browser
+                needs.
+            --}}
+            <audio controls preload="metadata" class="player mb-10" src="{{ route('voice-notes.audio', $note->public_token) }}">
                 Your browser can't play audio.
             </audio>
 

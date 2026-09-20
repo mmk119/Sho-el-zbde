@@ -11,6 +11,7 @@ use App\Models\Transcript;
 use App\Models\UsageLog;
 use App\Models\VoiceNote;
 use App\Services\Transcription\TranscriptionPrompt;
+use App\Services\Transcription\TranscriptSanityCheck;
 use App\Services\Transcription\TranscriptionResult;
 use Carbon\CarbonInterface;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -84,12 +85,16 @@ class TranscribeAudio implements ShouldQueue
             return;
         }
 
+        // Built once: the sanity check below needs the exact text that was sent,
+        // because a prompt echo is only recognisable against its own prompt.
+        $prompt = TranscriptionPrompt::build($note->language_hint, $note->prompt_hint);
+
         try {
             $result = $transcriber->transcribe(
                 Storage::path($path),
                 // Never empty, and matched to the language the uploader chose -
                 // an Arabic prompt makes Whisper translate English into Arabic.
-                TranscriptionPrompt::build($note->language_hint, $note->prompt_hint),
+                $prompt,
                 $note->language_hint,
             );
         } catch (TranscriptionRateLimited $e) {
@@ -100,6 +105,25 @@ class TranscribeAudio implements ShouldQueue
         } catch (TranscriptionRejected $e) {
             $note->markFailed($this->failureMessage());
             $this->fail($e);
+
+            return;
+        }
+
+        /*
+         * A prompt echo is well-formed text in the right language and passes
+         * every structural check, so it has to be caught here or it gets stored
+         * and summarised as though it were real. Refusing is the lesser harm: a
+         * failed note says so, a fictional digest does not.
+         */
+        $problem = TranscriptSanityCheck::problem(
+            $result->text,
+            $prompt,
+            $note->normalized_duration_seconds,
+        );
+
+        if ($problem !== null) {
+            $note->markFailed($this->failureMessage());
+            $this->discardNormalizedAudio($note);
 
             return;
         }

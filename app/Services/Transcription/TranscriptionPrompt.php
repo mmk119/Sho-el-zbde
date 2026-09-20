@@ -7,22 +7,27 @@ use Illuminate\Support\Str;
 /**
  * Builds the prompt that every transcription call must carry.
  *
- * Two findings shape this class, and they pull against each other:
+ * Three findings shape this class, each one paid for by running it:
  *
  *   Phase 0: the prompt is load-bearing. Unprompted, the same Lebanese audio
  *   gained a phantom opening phrase and leaked a Greek letter and an English
  *   word into Arabic text. So the prompt is never empty.
  *
- *   Found later, by uploading an English voice note: a Whisper prompt is also a
- *   LANGUAGE signal. An Arabic-language prompt made Whisper translate English
- *   speech into Arabic - a correct transcription of the wrong language. The
- *   dialect vocabulary that rescues Lebanese audio actively destroys everything
- *   else.
+ *   Found by uploading an English note: a Whisper prompt is also a LANGUAGE
+ *   signal. An Arabic prompt made Whisper translate English speech into Arabic
+ *   - a correct transcription of the wrong language. So prompts are keyed by
+ *   language, and auto-detect gets a short script-neutral one.
  *
- * So the prompt is chosen by language rather than being one global string. When
- * the uploader picks a language we use that language's prompt; when they leave
- * it on auto-detect we use a short, script-neutral one, because at that point
- * anything longer is just guessing at the answer.
+ *   Found through the MCP server, by passing names on an Arabic note: a Whisper
+ *   prompt is a CONTINUATION, not an instruction. Whisper treats it as the
+ *   transcript of audio immediately preceding, and carries on from it. The old
+ *   prompt was a comma-separated glossary, so the model continued the glossary
+ *   - emitting the word list over and over instead of transcribing. Adding
+ *   names made it worse by lengthening the list.
+ *
+ * Hence the shape rule: the prompt must READ LIKE SPEECH. The vocabulary lives
+ * inside ordinary sentences, and the uploader's names are folded into a
+ * sentence too, never appended as another list item.
  */
 final class TranscriptionPrompt
 {
@@ -32,7 +37,7 @@ final class TranscriptionPrompt
     {
         $parts = array_filter([
             self::base($languageHint),
-            trim((string) $userHint),
+            self::names($languageHint, $userHint),
         ]);
 
         $prompt = trim(implode(' ', $parts));
@@ -56,13 +61,44 @@ final class TranscriptionPrompt
      */
     private static function base(?string $languageHint): string
     {
-        $prompts = (array) config('shoelzbde.transcription.prompts', []);
-        $key = strtolower(trim((string) $languageHint));
+        return trim((string) self::forLanguage('prompts', $languageHint));
+    }
 
-        $chosen = $key !== '' && isset($prompts[$key])
-            ? $prompts[$key]
-            : ($prompts['default'] ?? '');
+    /**
+     * The uploader's names and places, folded into a sentence.
+     *
+     * Appending them bare would rebuild the list shape that caused the echo in
+     * the first place, so they go through a per-language template. The default
+     * template is bare by necessity: on auto-detect any framing words would
+     * steer the output language before we know what it should be.
+     */
+    private static function names(?string $languageHint, ?string $userHint): string
+    {
+        $names = trim((string) $userHint);
 
-        return trim((string) $chosen);
+        if ($names === '') {
+            return '';
+        }
+
+        $template = trim((string) self::forLanguage('hint_templates', $languageHint));
+
+        if ($template === '' || ! str_contains($template, ':names')) {
+            return rtrim($names, " .،,").'.';
+        }
+
+        return str_replace(':names', rtrim($names, " .،,"), $template);
+    }
+
+    /** Look up a per-language config entry, falling back to 'default'. */
+    private static function forLanguage(string $key, ?string $languageHint): string
+    {
+        $entries = (array) config("shoelzbde.transcription.{$key}", []);
+        $code = strtolower(trim((string) $languageHint));
+
+        if ($code !== '' && isset($entries[$code])) {
+            return (string) $entries[$code];
+        }
+
+        return (string) ($entries['default'] ?? '');
     }
 }

@@ -31,7 +31,11 @@ class FakeTranscriptionService implements TranscriptionService
         }
 
         return $this->result ?? new TranscriptionResult(
-            text: 'مرحبا كيفك',
+            // Long enough to be plausible for the durations the fixtures use.
+            // TranscriptSanityCheck refuses a transcript too sparse for its
+            // audio, and it is right to - a two word transcript of eight
+            // minutes of speech is exactly the failure it exists to catch.
+            text: trim(str_repeat('انا عشت الحرب بلبنان وكانت صعبة كتير على كل العالم ', 25)),
             language: 'arabic',
             segments: [['start' => 0, 'end' => 2, 'text' => 'مرحبا']],
             durationSeconds: 120.0,

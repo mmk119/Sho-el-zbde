@@ -51,8 +51,8 @@ class TranscribeAudioTest extends JobChainTestCase
         $this->runJob($note);
 
         $this->assertSame('arabic', $note->fresh()->language_detected);
-        $this->assertSame('مرحبا كيفك', $note->fresh()->transcript->full_text);
-        $this->assertSame(2, $note->fresh()->transcript->word_count);
+        $this->assertStringContainsString('انا عشت الحرب', $note->fresh()->transcript->full_text);
+        $this->assertGreaterThan(100, $note->fresh()->transcript->word_count);
     }
 
     /** The Phase 0 finding, enforced at the job level. */
@@ -97,6 +97,35 @@ class TranscribeAudioTest extends JobChainTestCase
 
         $this->assertDoesNotMatchRegularExpression('/[\x{0600}-\x{06FF}]/u', $fake->sawPrompt);
         $this->assertSame('en', $fake->sawLanguageHint);
+    }
+
+    /**
+     * A prompt echo is well-formed text of the right language. Nothing
+     * structural catches it, so if the sanity check does not, a fictional
+     * digest gets built on top of it.
+     */
+    public function test_a_prompt_echo_fails_the_note_and_stores_no_transcript(): void
+    {
+        $this->app->bind(TranscriptionService::class, fn () => new FakeTranscriptionService(
+            result: new TranscriptionResult(
+                // 48 words for 461 seconds, and all of them from the prompt.
+                text: trim(str_repeat('Sho el Zbde ', 12)),
+                language: 'english',
+                segments: null,
+                durationSeconds: 461.0,
+                model: 'whisper-1',
+            ),
+        ));
+
+        $note = $this->makeNote(VoiceNoteStatus::Transcribing);
+
+        $this->runJob($note);
+
+        $fresh = $note->fresh();
+
+        $this->assertSame(VoiceNoteStatus::Failed, $fresh->status);
+        $this->assertNull($fresh->transcript, 'a transcript that is not a transcription must not be stored');
+        $this->assertNotEmpty($fresh->error_message);
     }
 
     public function test_it_bills_against_the_normalized_duration(): void
@@ -167,7 +196,13 @@ class TranscribeAudioTest extends JobChainTestCase
     public function test_it_stores_segments_but_the_app_does_not_depend_on_them(): void
     {
         $this->app->bind(TranscriptionService::class, fn () => new FakeTranscriptionService(
-            result: new TranscriptionResult('نص', 'arabic', null, 100.0, 'whisper-1'),
+            result: new TranscriptionResult(
+                trim(str_repeat('كلمة تانية وهيدا نص طويل منيح ', 40)),
+                'arabic',
+                null,
+                100.0,
+                'whisper-1',
+            ),
         ));
 
         $note = $this->makeNote(VoiceNoteStatus::Transcribing);

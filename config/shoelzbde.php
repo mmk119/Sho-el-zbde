@@ -75,14 +75,19 @@ return [
     | hallucinating a phantom opening phrase and leaking non-Arabic characters
     | into Arabic text.
     |
-    | But a prompt is also a LANGUAGE signal, not just a vocabulary hint.
-    | Whisper will happily translate English speech into the language its prompt
-    | is written in. So the prompts are keyed by language: pick the one matching
-    | what the speaker is using, and fall back to a language-neutral prompt when
-    | we do not know yet.
+    | Two things about it, both learned the hard way by running it:
     |
-    | 'default' is what auto-detect uses. Keep it short and script-neutral -
-    | anything longer starts steering the output language.
+    | 1. A prompt is a LANGUAGE signal. Whisper will translate English speech
+    |    into the language its prompt is written in, so prompts are keyed by
+    |    language and auto-detect gets a short, script-neutral one.
+    |
+    | 2. A prompt is a CONTINUATION, not an instruction. Whisper treats it as
+    |    the transcript of audio that came just before, and carries on from it.
+    |    A dense comma-separated glossary therefore reads as a list to continue,
+    |    and the model obliges - emitting the list again instead of transcribing.
+    |    So the prompts below are natural speech that happens to contain the
+    |    vocabulary, and names are folded into a sentence rather than appended
+    |    to a list. Shape matters more than length.
     |
     */
 
@@ -92,14 +97,35 @@ return [
         'timeout_seconds' => (int) env('TRANSCRIPTION_TIMEOUT', 600),
 
         'prompts' => [
-            // Auto-detect. Deliberately minimal: a proper noun and nothing else.
+            // Auto-detect. Deliberately minimal: anything longer steers the
+            // output language before we know what the speaker is using.
             'default' => env('TRANSCRIPTION_PROMPT', 'Sho el Zbde.'),
 
-            // Only used when the uploader actually selects Arabic. This is the
-            // vocabulary Phase 0 measured as the difference between a usable
-            // Lebanese transcript and a bad one.
-            'ar' => env('TRANSCRIPTION_PROMPT_AR', 'Sho el Zbde. شو الزبدة؟ حكي لبناني عامي: شو، هيك، هلق، كتير، منيح، بدي، عم، لسا، يلا، حبيبي، إن شاء الله، دغري، بلشيت، ناطر، هيدا، مبلا، خلص، معليش، تكرم، بكرا، مبارح، شوي.'),
+            // Used only when the uploader selects Arabic. Ordinary Lebanese
+            // speech carrying the dialect markers Phase 0 found load-bearing.
+            'ar' => env('TRANSCRIPTION_PROMPT_AR', 'مرحبا، كيفك؟ هلق عم بحكي معك شوي. شو صار معك مبارح؟ كنت ناطر كتير، بس معليش. هيدا الشي منيح كتير بس لسا ما خلص. يلا حبيبي، إن شاء الله بكرا منشوفك ودغري منرجع عالبيت.'),
         ],
+
+        /*
+         * How the uploader's names and places get folded in. :names is replaced
+         * with what they typed.
+         *
+         * The default is bare on purpose: any framing words would be a language
+         * signal, and on auto-detect we do not yet know the language. Two or
+         * three proper nouns are not enough of a pattern to invite a list.
+         */
+        'hint_templates' => [
+            'default' => env('TRANSCRIPTION_HINT_TEMPLATE', ':names.'),
+            'ar' => env('TRANSCRIPTION_HINT_TEMPLATE_AR', 'كنا عم نحكي عن :names.'),
+        ],
+
+        /*
+         * Sanity checks on what comes back, so a prompt echo or a collapsed
+         * transcript is refused rather than stored. See TranscriptSanityCheck.
+         */
+        'min_words_per_minute' => (int) env('TRANSCRIPTION_MIN_WORDS_PER_MINUTE', 25),
+        'max_prompt_overlap' => (float) env('TRANSCRIPTION_MAX_PROMPT_OVERLAP', 0.6),
+        'sanity_check_from_seconds' => (int) env('TRANSCRIPTION_SANITY_FROM_SECONDS', 30),
 
         // Per-minute list price. Config, not a constant, precisely so that a
         // price change or a different provider does not mean editing code.

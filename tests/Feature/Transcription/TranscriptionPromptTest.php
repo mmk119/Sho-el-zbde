@@ -23,7 +23,11 @@ class TranscriptionPromptTest extends TestCase
         config([
             'shoelzbde.transcription.prompts' => [
                 'default' => 'Sho el Zbde.',
-                'ar' => 'Sho el Zbde. شو الزبدة؟ يلا، حبيبي، هيك',
+                'ar' => 'هلق عم بحكي معك شوي. يلا حبيبي، هيدا منيح كتير.',
+            ],
+            'shoelzbde.transcription.hint_templates' => [
+                'default' => ':names.',
+                'ar' => 'كنا عم نحكي عن :names.',
             ],
         ]);
     }
@@ -90,6 +94,56 @@ class TranscriptionPromptTest extends TestCase
 
     // ── the uploader's own names ────────────────────────────────────────────
 
+    // ── shape, not just content ─────────────────────────────────────────────
+
+    /**
+     * The regression that produced 48 words of repeated prompt instead of a
+     * transcript. Whisper treats the prompt as the transcript of preceding
+     * audio and continues it, so a bare comma list invites a comma list back.
+     * Names must fold into a sentence.
+     */
+    public function test_names_are_folded_into_a_sentence_not_appended_as_a_list(): void
+    {
+        $prompt = TranscriptionPrompt::build('ar', 'القوات اللبنانية, بيروت');
+
+        $this->assertStringContainsString('كنا عم نحكي عن', $prompt);
+        $this->assertStringEndsWith('.', $prompt);
+    }
+
+    public function test_the_arabic_base_prompt_reads_as_speech_rather_than_a_glossary(): void
+    {
+        config(['shoelzbde.transcription.prompts.ar' => 'هلق عم بحكي معك شوي. يلا حبيبي، هيدا منيح كتير.']);
+
+        $prompt = TranscriptionPrompt::build('ar');
+
+        // A glossary is mostly separators. Prose is mostly words.
+        $commas = preg_match_all('/[,،]/u', $prompt);
+        $words = count(preg_split('/\s+/u', $prompt, -1, PREG_SPLIT_NO_EMPTY) ?: []);
+
+        $this->assertLessThan(
+            $words / 3,
+            $commas,
+            'the prompt is comma-dense enough to read as a list to continue',
+        );
+    }
+
+    public function test_a_trailing_separator_on_the_user_hint_does_not_double_up(): void
+    {
+        $prompt = TranscriptionPrompt::build('ar', 'بيروت، ');
+
+        $this->assertStringNotContainsString('،.', $prompt);
+        $this->assertStringNotContainsString('..', $prompt);
+    }
+
+    public function test_auto_detect_keeps_names_bare_so_the_language_is_not_steered(): void
+    {
+        $prompt = TranscriptionPrompt::build(null, 'Teta Mariam, Jounieh');
+
+        // No English framing words that would bias detection.
+        $this->assertStringNotContainsString('talking about', $prompt);
+        $this->assertStringContainsString('Teta Mariam', $prompt);
+    }
+
     public function test_it_appends_the_user_hint_without_losing_the_base(): void
     {
         $prompt = TranscriptionPrompt::build('ar', 'Teta Mariam, Jounieh');
@@ -110,7 +164,8 @@ class TranscriptionPromptTest extends TestCase
     {
         $prompt = TranscriptionPrompt::build('ar', str_repeat('name ', 400));
 
-        $this->assertStringContainsString('Sho el Zbde', $prompt);
+        // The base must survive; it is the part that carries the dialect.
+        $this->assertStringContainsString('هلق عم بحكي', $prompt);
         $this->assertLessThanOrEqual(900, mb_strlen($prompt));
     }
 }

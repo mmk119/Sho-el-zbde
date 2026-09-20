@@ -167,7 +167,7 @@ openssl.cafile = "C:\path\to\cacert.pem"
 php artisan test
 ```
 
-177 tests. Five drive the real ffmpeg binary; the rest fake every external
+192 tests. Five drive the real ffmpeg binary; the rest fake every external
 service, so the suite makes no network calls and costs nothing to run.
 
 ---
