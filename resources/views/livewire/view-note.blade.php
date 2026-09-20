@@ -7,6 +7,11 @@
     $dir = $rtl ? 'rtl' : 'ltr';
     $contentFont = $rtl ? 'rtl-content' : 'font-serif';
 
+    // The digest is the only view with enough content to earn two columns.
+    $showsDigest = ! $note->isExpired()
+        && $note->status === VoiceNoteStatus::Done
+        && $digest !== null;
+
     $entityLabels = [
         'dates' => 'Dates',
         'times' => 'Times',
@@ -17,6 +22,7 @@
 @endphp
 
 <div
+    class="{{ $showsDigest ? '' : 'mx-auto w-full max-w-2xl' }}"
     @if ($this->isWorking() && ! $note->isExpired())
         wire:poll.{{ config('shoelzbde.poll_interval_seconds') }}s="refreshNote"
     @endif
@@ -152,6 +158,14 @@
         </div>
 
         @if ($digest)
+        <div class="lg:grid lg:grid-cols-[minmax(0,1fr)_18rem] lg:items-start lg:gap-x-14">
+            {{--
+                Main column: everything that is read as prose. It keeps a
+                comfortable measure instead of stretching to the full width,
+                because long lines of serif are hard to track back from.
+            --}}
+            <div class="min-w-0">
+
             {{-- ───── The hero: the gist, then what they asked you ───── --}}
 
             <section class="mb-12">
@@ -183,9 +197,83 @@
                 @endif
             </section>
 
-            {{-- ───── Everything below is secondary ───── --}}
+            {{-- On laptops the transcript stays in the prose column. --}}
+            @if ($transcript)
+                <section
+                    class="mb-10"
+                    x-data="{
+                        open: false,
+                        copied: false,
+                        copy() {
+                            navigator.clipboard.writeText($refs.body.innerText).then(() => {
+                                this.copied = true;
+                                setTimeout(() => this.copied = false, 1800);
+                            });
+                        },
+                    }"
+                >
+                    <div class="flex items-center justify-between gap-3">
+                        <button type="button" @click="open = !open" class="eyebrow flex items-center gap-2 transition-colors hover:text-sand-600 dark:hover:text-sand-300">
+                            <svg class="h-3 w-3 transition-transform duration-200" :class="open && 'rotate-90'" fill="none" stroke="currentColor" stroke-width="2.4" viewBox="0 0 24 24" aria-hidden="true">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5"/>
+                            </svg>
+                            Full transcript
+                        </button>
 
-            <audio controls preload="none" class="player mb-12" src="{{ route('voice-notes.audio', $note->public_token) }}">
+                        <button type="button" @click="copy()" class="btn-quiet px-2.5 py-1 text-xs">
+                            <span x-show="!copied">Copy</span>
+                            <span x-show="copied" x-cloak class="text-accent-600 dark:text-accent-400">Copied</span>
+                        </button>
+                    </div>
+
+                    <div x-show="open" x-collapse x-cloak>
+                        <p x-ref="body" dir="{{ $dir }}"
+                           class="{{ $contentFont }} mt-5 text-[17px] leading-relaxed whitespace-pre-wrap text-sand-600 dark:text-sand-400">{{ $transcript->full_text }}</p>
+                    </div>
+                </section>
+            @endif
+
+            <div
+                class="flex flex-wrap gap-2.5"
+                x-data="{
+                    copiedDigest: false,
+                    copiedLink: false,
+                    copyDigest() {
+                        navigator.clipboard.writeText(@js($this->plainTextDigest())).then(() => {
+                            this.copiedDigest = true;
+                            setTimeout(() => this.copiedDigest = false, 1800);
+                        });
+                    },
+                    copyLink() {
+                        navigator.clipboard.writeText(window.location.href).then(() => {
+                            this.copiedLink = true;
+                            setTimeout(() => this.copiedLink = false, 1800);
+                        });
+                    },
+                }"
+            >
+                <button type="button" @click="copyDigest()" class="btn-quiet">
+                    <span x-show="!copiedDigest">Copy digest</span>
+                    <span x-show="copiedDigest" x-cloak class="text-accent-600 dark:text-accent-400">Copied</span>
+                </button>
+
+                <button type="button" @click="copyLink()" class="btn-quiet">
+                    <span x-show="!copiedLink">Share link</span>
+                    <span x-show="copiedLink" x-cloak class="text-accent-600 dark:text-accent-400">Link copied</span>
+                </button>
+
+                <a href="{{ route('upload') }}" wire:navigate class="btn-quiet">Another one</a>
+            </div>
+
+            </div>{{-- /prose column --}}
+
+            {{--
+                Aside: the reference material. Beside the digest on a laptop,
+                stacked underneath it on a phone.
+            --}}
+            <aside class="mt-12 lg:mt-0">
+
+            <audio controls preload="none" class="player mb-10" src="{{ route('voice-notes.audio', $note->public_token) }}">
                 Your browser can't play audio.
             </audio>
 
@@ -198,8 +286,8 @@
                     <p class="eyebrow mb-5">Key details</p>
                     <div class="space-y-4">
                         @foreach ($entities as $type => $values)
-                            <div class="flex flex-col gap-2 sm:flex-row sm:items-baseline sm:gap-5">
-                                <p class="hint w-16 shrink-0">{{ $entityLabels[$type] ?? ucfirst($type) }}</p>
+                            <div class="flex flex-col gap-1.5">
+                                <p class="hint">{{ $entityLabels[$type] ?? ucfirst($type) }}</p>
                                 <div class="flex flex-wrap gap-1.5" dir="{{ $dir }}">
                                     @foreach ($values as $value)
                                         <span class="chip">{{ $value }}</span>
@@ -270,72 +358,8 @@
                 </details>
             @endif
 
-            @if ($transcript)
-                <section
-                    class="mb-10"
-                    x-data="{
-                        open: false,
-                        copied: false,
-                        copy() {
-                            navigator.clipboard.writeText($refs.body.innerText).then(() => {
-                                this.copied = true;
-                                setTimeout(() => this.copied = false, 1800);
-                            });
-                        },
-                    }"
-                >
-                    <div class="flex items-center justify-between gap-3">
-                        <button type="button" @click="open = !open" class="eyebrow flex items-center gap-2 transition-colors hover:text-sand-600 dark:hover:text-sand-300">
-                            <svg class="h-3 w-3 transition-transform duration-200" :class="open && 'rotate-90'" fill="none" stroke="currentColor" stroke-width="2.4" viewBox="0 0 24 24" aria-hidden="true">
-                                <path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5"/>
-                            </svg>
-                            Full transcript
-                        </button>
-
-                        <button type="button" @click="copy()" class="btn-quiet px-2.5 py-1 text-xs">
-                            <span x-show="!copied">Copy</span>
-                            <span x-show="copied" x-cloak class="text-accent-600 dark:text-accent-400">Copied</span>
-                        </button>
-                    </div>
-
-                    <div x-show="open" x-collapse x-cloak>
-                        <p x-ref="body" dir="{{ $dir }}"
-                           class="{{ $contentFont }} mt-5 text-[17px] leading-relaxed whitespace-pre-wrap text-sand-600 dark:text-sand-400">{{ $transcript->full_text }}</p>
-                    </div>
-                </section>
-            @endif
-
-            <div
-                class="flex flex-wrap gap-2.5"
-                x-data="{
-                    copiedDigest: false,
-                    copiedLink: false,
-                    copyDigest() {
-                        navigator.clipboard.writeText(@js($this->plainTextDigest())).then(() => {
-                            this.copiedDigest = true;
-                            setTimeout(() => this.copiedDigest = false, 1800);
-                        });
-                    },
-                    copyLink() {
-                        navigator.clipboard.writeText(window.location.href).then(() => {
-                            this.copiedLink = true;
-                            setTimeout(() => this.copiedLink = false, 1800);
-                        });
-                    },
-                }"
-            >
-                <button type="button" @click="copyDigest()" class="btn-quiet">
-                    <span x-show="!copiedDigest">Copy digest</span>
-                    <span x-show="copiedDigest" x-cloak class="text-accent-600 dark:text-accent-400">Copied</span>
-                </button>
-
-                <button type="button" @click="copyLink()" class="btn-quiet">
-                    <span x-show="!copiedLink">Share link</span>
-                    <span x-show="copiedLink" x-cloak class="text-accent-600 dark:text-accent-400">Link copied</span>
-                </button>
-
-                <a href="{{ route('upload') }}" wire:navigate class="btn-quiet">Another one</a>
-            </div>
+            </aside>{{-- /reference column --}}
+        </div>{{-- /two-column grid --}}
         @else
             <div class="panel">
                 <p class="text-sand-600 dark:text-sand-400">

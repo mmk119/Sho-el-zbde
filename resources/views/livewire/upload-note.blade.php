@@ -1,4 +1,4 @@
-<div>
+<div class="mx-auto w-full max-w-2xl">
     <div class="mb-10">
         <h1 class="font-serif text-[2.1rem] leading-[1.12] tracking-tight text-sand-900 sm:text-[2.75rem] dark:text-sand-50">
             Nobody has time for a<br class="hidden sm:block"> nine minute voice note.

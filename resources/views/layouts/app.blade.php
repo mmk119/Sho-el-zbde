@@ -28,7 +28,7 @@
     @vite(['resources/css/app.css', 'resources/js/app.js'])
 </head>
 <body class="min-h-screen">
-    <div class="mx-auto flex min-h-screen w-full max-w-[38rem] flex-col px-5 py-7 sm:px-6 sm:py-14">
+    <div class="mx-auto flex min-h-screen w-full max-w-[38rem] flex-col px-5 py-7 sm:px-6 sm:py-14 lg:max-w-5xl lg:px-8">
 
         <header class="mb-12 flex items-center justify-between gap-4 sm:mb-16">
             <a href="{{ route('upload') }}" wire:navigate class="group inline-flex items-baseline gap-2">
