@@ -82,6 +82,23 @@ class TranscribeAudioTest extends JobChainTestCase
         $this->assertStringContainsString('Sho el Zbde', $fake->sawPrompt);
     }
 
+    /**
+     * Regression: an Arabic prompt made Whisper translate English speech into
+     * Arabic. The note's language hint has to reach the prompt builder.
+     */
+    public function test_an_english_note_is_not_given_an_arabic_prompt(): void
+    {
+        $fake = new FakeTranscriptionService();
+        $this->app->bind(TranscriptionService::class, fn () => $fake);
+
+        $note = $this->makeNote(VoiceNoteStatus::Transcribing, ['language_hint' => 'en']);
+
+        $this->runJob($note);
+
+        $this->assertDoesNotMatchRegularExpression('/[\x{0600}-\x{06FF}]/u', $fake->sawPrompt);
+        $this->assertSame('en', $fake->sawLanguageHint);
+    }
+
     public function test_it_bills_against_the_normalized_duration(): void
     {
         $note = $this->makeNote(VoiceNoteStatus::Transcribing);

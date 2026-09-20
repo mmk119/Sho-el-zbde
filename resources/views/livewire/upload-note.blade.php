@@ -78,7 +78,7 @@
 
             <p class="hint mt-3">
                 {{ implode(', ', \App\Support\UploadRules::friendlyFormats()) }}
-                · up to {{ config('shoelzbde.max_upload_mb') }}MB
+                · up to {{ \App\Support\UploadRules::maxMegabytes() }}MB
                 · up to {{ \App\Support\UploadRules::maxDurationMinutes() }} minutes
             </p>
         </div>
@@ -91,7 +91,10 @@
                         <option value="{{ $code }}">{{ $name }}</option>
                     @endforeach
                 </select>
-                <p class="hint mt-2">Auto detect works well. Set it if you already know.</p>
+                <p class="hint mt-2">
+                    Auto detect works well. Pick the language if you know it &mdash; it's
+                    what unlocks the dialect vocabulary for Arabic.
+                </p>
             </div>
 
             <div>

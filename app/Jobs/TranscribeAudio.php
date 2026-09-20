@@ -87,8 +87,9 @@ class TranscribeAudio implements ShouldQueue
         try {
             $result = $transcriber->transcribe(
                 Storage::path($path),
-                // Never empty. See TranscriptionPrompt and the Phase 0 findings.
-                TranscriptionPrompt::build($note->prompt_hint),
+                // Never empty, and matched to the language the uploader chose -
+                // an Arabic prompt makes Whisper translate English into Arabic.
+                TranscriptionPrompt::build($note->language_hint, $note->prompt_hint),
                 $note->language_hint,
             );
         } catch (TranscriptionRateLimited $e) {

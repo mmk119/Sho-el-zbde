@@ -3,6 +3,7 @@
 namespace App\Http\Requests;
 
 use App\Contracts\AudioInspector;
+use App\Support\UploadRules;
 use App\Support\UploadThrottle;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Validator;
@@ -23,7 +24,7 @@ class StoreVoiceNoteRequest extends FormRequest
             'file' => [
                 'required',
                 'file',
-                'max:' . (config('shoelzbde.max_upload_mb') * 1024),
+                'max:' . UploadRules::maxKilobytes(),
                 'mimetypes:' . implode(',', config('shoelzbde.accepted_mimes')),
             ],
             'language_hint' => ['nullable', 'string', 'max:16', 'regex:/^[a-zA-Z-]+$/'],
@@ -83,7 +84,7 @@ class StoreVoiceNoteRequest extends FormRequest
     public function messages(): array
     {
         return [
-            'file.max' => 'That file is larger than the ' . config('shoelzbde.max_upload_mb') . 'MB limit.',
+            'file.max' => 'That file is larger than the ' . UploadRules::maxMegabytes() . 'MB limit.',
             'file.mimetypes' => 'That does not look like an audio file we can read.',
         ];
     }

@@ -39,7 +39,7 @@ class UploadNote extends Component
     {
         return [
             'file.required' => 'Pick a voice note first.',
-            'file.max' => 'That file is larger than the '.config('shoelzbde.max_upload_mb').'MB limit.',
+            'file.max' => 'That file is larger than the '.UploadRules::maxMegabytes().'MB limit.',
             'file.mimetypes' => 'That does not look like an audio file we can read.',
         ];
     }

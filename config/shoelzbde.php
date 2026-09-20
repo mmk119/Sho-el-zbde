@@ -73,9 +73,16 @@ return [
     |
     | The prompt is NOT optional. Phase 0 measured the unprompted path
     | hallucinating a phantom opening phrase and leaking non-Arabic characters
-    | into Arabic text. The default below seeds Lebanese dialect markers plus
-    | the app name; the upload form may append names and places, but nothing may
-    | produce an empty prompt.
+    | into Arabic text.
+    |
+    | But a prompt is also a LANGUAGE signal, not just a vocabulary hint.
+    | Whisper will happily translate English speech into the language its prompt
+    | is written in. So the prompts are keyed by language: pick the one matching
+    | what the speaker is using, and fall back to a language-neutral prompt when
+    | we do not know yet.
+    |
+    | 'default' is what auto-detect uses. Keep it short and script-neutral -
+    | anything longer starts steering the output language.
     |
     */
 
@@ -84,7 +91,15 @@ return [
         'model' => env('TRANSCRIPTION_MODEL', 'whisper-1'),
         'timeout_seconds' => (int) env('TRANSCRIPTION_TIMEOUT', 600),
 
-        'prompt' => env('TRANSCRIPTION_PROMPT', 'Sho el Zbde. شو الزبدة؟ حكي لبناني عامي: شو، هيك، هلق، كتير، منيح، بدي، عم، لسا، يلا، حبيبي، إن شاء الله، دغري، بلشيت، ناطر، هيدا، مبلا، خلص، معليش، تكرم، بكرا، مبارح، شوي.'),
+        'prompts' => [
+            // Auto-detect. Deliberately minimal: a proper noun and nothing else.
+            'default' => env('TRANSCRIPTION_PROMPT', 'Sho el Zbde.'),
+
+            // Only used when the uploader actually selects Arabic. This is the
+            // vocabulary Phase 0 measured as the difference between a usable
+            // Lebanese transcript and a bad one.
+            'ar' => env('TRANSCRIPTION_PROMPT_AR', 'Sho el Zbde. شو الزبدة؟ حكي لبناني عامي: شو، هيك، هلق، كتير، منيح، بدي، عم، لسا، يلا، حبيبي، إن شاء الله، دغري، بلشيت، ناطر، هيدا، مبلا، خلص، معليش، تكرم، بكرا، مبارح، شوي.'),
+        ],
 
         // Per-minute list price. Config, not a constant, precisely so that a
         // price change or a different provider does not mean editing code.

@@ -313,7 +313,11 @@ The real use case is a phone voice note with background noise. Not yet tested.
   run hallucinated a phantom opening phrase and leaked non-Arabic characters
   (a Greek letter, an English word) into Arabic text. The prompted run did
   neither. **`TranscribeAudio` must ALWAYS send a prompt** — there is no
-  "no prompt" code path. Build a default prompt holding common Lebanese words
+  "no prompt" code path.
+
+  **Qualified later (see "The prompt language bug" below): this finding is true
+  for Arabic, and was measured only on Arabic.** The prompt is still mandatory,
+  but it is now chosen by language rather than being one global Arabic string. Build a default prompt holding common Lebanese words
   plus the app name, and let the user optionally append their own names and
   places from the upload form. Treat the default prompt as config, not a
   hardcoded string.
@@ -772,6 +776,9 @@ Nothing here is started. Rough order:
 5. **Two long-running processes**, both needing a supervisor (systemd or
    supervisord): `queue:work` — without it nothing is ever processed — and
    `schedule:run` every minute via cron, which is what triggers `zbde:purge`.
+   **Every deploy must end with `php artisan queue:restart`.** A running worker
+   holds the framework in memory and will keep executing the old code and old
+   config indefinitely. This has already caused one wasted debugging session.
 6. **HTTPS is not optional.** The clipboard API needs a secure context, so Copy
    digest and Share link silently do nothing over plain HTTP.
 7. **Upload size limits in two more places:** `upload_max_filesize` and
@@ -786,3 +793,73 @@ Nothing here is started. Rough order:
 
 Optional, deferred earlier, still open: Reverb for live progress with polling as
 the fallback, and Docker Compose.
+
+---
+
+## Two bugs found by the user, after everything was "done"
+
+Both were found by uploading a file, not by the suite. Both had passing tests
+around them the whole time.
+
+### The 2MB wall
+
+An upload failed with Livewire's generic "The file failed to upload." The file
+was 4.68MB; PHP's `upload_max_filesize` was **2M**, left at the
+`php.ini-development` default from the Phase 0 toolchain setup. PHP discards the
+upload before Laravel sees it, so nothing downstream can produce a better
+message.
+
+The page meanwhile advertised "up to 100MB", which was simply untrue.
+
+**Fixed in two places.** `php.ini` raised to 128M/144M (post_max_size must
+exceed upload_max_filesize or the POST is rejected first). And
+`UploadRules::maxBytes()` now returns the **smallest** of our configured limit,
+`upload_max_filesize` and `post_max_size` - that number drives validation, the
+error text and the hint under the drop zone. If PHP is ever the tighter
+constraint again, the user gets an honest "larger than the 2MB limit" instead of
+a mystery.
+
+The irony: this exact trap was already written into the Phase 7 checklist as a
+deployment concern. It was never checked locally.
+
+### The prompt language bug
+
+An English voice note came back with an Arabic transcript **and** an Arabic
+digest. Whisper had not mis-detected anything - it had *translated* the English
+speech into Arabic.
+
+Cause: a Whisper `prompt` is a **language signal**, not just a vocabulary hint.
+The mandatory default prompt was entirely Lebanese Arabic vocabulary and was
+applied to every upload regardless of language. Arabic prompt in, Arabic text
+out; then `language_detected` became `arabic`, which fed the analysis prompt
+("the speaker is speaking arabic"), so the digest was Arabic too. One wrong
+input, faithfully propagated through three correct steps.
+
+The root error was over-applying a finding. Phase 0 concluded "the prompt is
+load-bearing" from a test on Lebanese audio. True for Arabic - and made
+mandatory for everything, which broke every other language.
+
+**Fixed:** `config('shoelzbde.transcription.prompts')` is now a map keyed by
+language. Selecting Arabic gets the Lebanese vocabulary; auto-detect and every
+other language get a short, script-neutral prompt. The never-empty invariant is
+unchanged. There are regression tests asserting no non-Arabic language ever
+receives Arabic script in its prompt.
+
+**Trade-off worth knowing:** on auto-detect, Lebanese audio no longer gets the
+dialect vocabulary, because we cannot know the language before transcribing.
+Selecting Arabic in the dropdown is what turns it on, and the form now says so.
+
+### The lesson that cost real money
+
+Two verification runs "failed" after the fix was written. The fix was fine - the
+**queue worker had been running since before the change**. `queue:work` boots
+the framework once and reuses it for every job, so code and config changes never
+reach a running worker.
+
+Roughly $0.08 of API credit was spent proving nothing, and the fix was briefly
+believed broken.
+
+**After any change to code or config, restart the worker.** `php artisan
+queue:restart` asks running workers to stop after their current job; a
+supervisor then starts fresh ones. This belongs in the deploy sequence, not just
+in local habit - added to the Phase 7 checklist.

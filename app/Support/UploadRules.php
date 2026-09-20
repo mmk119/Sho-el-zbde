@@ -12,14 +12,64 @@ use App\Contracts\AudioInspector;
  */
 final class UploadRules
 {
+    /**
+     * The limit we can actually honour, which is the smallest of three numbers:
+     * our own setting, PHP's upload_max_filesize, and PHP's post_max_size.
+     *
+     * PHP enforces its two before Laravel sees the request at all - the upload
+     * arrives empty and the only thing a framework can say is "the file failed
+     * to upload", which tells the user nothing. Advertising a limit larger than
+     * PHP allows turns a clear "too big" message into a mystery, so the smallest
+     * number wins everywhere: validation, the error text, and the hint under the
+     * drop zone.
+     */
     public static function maxBytes(): int
     {
-        return (int) config('shoelzbde.max_upload_mb') * 1024 * 1024;
+        $ours = (int) config('shoelzbde.max_upload_mb') * 1024 * 1024;
+
+        $limits = array_filter([
+            $ours,
+            self::iniBytes('upload_max_filesize'),
+            self::iniBytes('post_max_size'),
+        ], fn ($bytes) => $bytes > 0);
+
+        return (int) min($limits);
     }
 
     public static function maxKilobytes(): int
     {
-        return (int) config('shoelzbde.max_upload_mb') * 1024;
+        return intdiv(self::maxBytes(), 1024);
+    }
+
+    public static function maxMegabytes(): int
+    {
+        return intdiv(self::maxBytes(), 1024 * 1024);
+    }
+
+    /** True when PHP, not us, is the binding constraint - worth saying out loud. */
+    public static function phpIsTheBottleneck(): bool
+    {
+        return self::maxBytes() < (int) config('shoelzbde.max_upload_mb') * 1024 * 1024;
+    }
+
+    /** Turns PHP's "8M" / "512K" / "-1" shorthand into bytes. -1 means no limit. */
+    private static function iniBytes(string $key): int
+    {
+        $raw = trim((string) ini_get($key));
+
+        if ($raw === '' || $raw === '-1') {
+            return 0;
+        }
+
+        $unit = strtolower(substr($raw, -1));
+        $value = (int) $raw;
+
+        return match ($unit) {
+            'g' => $value * 1024 * 1024 * 1024,
+            'm' => $value * 1024 * 1024,
+            'k' => $value * 1024,
+            default => $value,
+        };
     }
 
     public static function maxDurationSeconds(): int
