@@ -11,19 +11,16 @@
  * Visual direction
  * ---------------------------------------------------------------------------
  *
- * Warm, not cool. "Zbde" is butter, so the accent is an ochre/gold rather than
- * the default blue, and the neutrals are stone (warm grey) rather than slate.
+ * Warm, quiet, and mostly empty. "Zbde" is butter, so the accent is an ochre
+ * rather than the default blue, and the neutrals are warm.
  *
- * One accent, used sparingly: it marks the two things that matter on the result
- * page - the gist and the questions - plus focus rings and the primary action.
- * Everything else is neutral, so the accent still means something when it
- * appears.
+ * The rule that keeps it simple: SEPARATE WITH SPACE, NOT WITH BOXES. Panels
+ * have no borders and almost no shadow; what divides one section from the next
+ * is whitespace and a small label. A page of outlined cards reads as a form.
  *
- * Two typefaces with clearly separate jobs:
- *   serif  - what the speaker said, and page titles. Editorial, calm.
- *   sans   - interface: labels, buttons, metadata, section headings.
- *
- * Neither covers Arabic, so RTL content gets a system Arabic stack instead.
+ * The accent appears in four places only - the questions panel, a high-urgency
+ * badge, the primary button, and focus rings. Anywhere else and it stops
+ * meaning anything.
  */
 
 @theme {
@@ -33,26 +30,53 @@
     /* Arabic and other RTL scripts: system faces that actually have the glyphs. */
     --font-arabic: 'Segoe UI', 'Noto Naskh Arabic', 'Geeza Pro', 'Traditional Arabic', Tahoma, sans-serif;
 
-    --color-accent-50: #fbf7ef;
-    --color-accent-100: #f5ead3;
-    --color-accent-200: #e9d3a4;
-    --color-accent-300: #dbb96f;
-    --color-accent-400: #cca049;
+    /* Warm neutrals, a touch softer than stone at the light end. */
+    --color-sand-50: #faf9f7;
+    --color-sand-100: #f4f2ee;
+    --color-sand-200: #e8e4dd;
+    --color-sand-300: #d5cfc4;
+    --color-sand-400: #a8a096;
+    --color-sand-500: #7d766c;
+    --color-sand-600: #5c564e;
+    --color-sand-700: #403b35;
+    --color-sand-800: #2a2621;
+    --color-sand-900: #1c1917;
+    --color-sand-950: #131110;
+
+    --color-accent-50: #fdf9f0;
+    --color-accent-100: #f8eed8;
+    --color-accent-200: #efdab0;
+    --color-accent-300: #e0bd78;
+    --color-accent-400: #cfa04d;
     --color-accent-500: #b8863a;
-    --color-accent-600: #9a6c2f;
-    --color-accent-700: #7b5426;
-    --color-accent-800: #5c3e1d;
-    --color-accent-900: #3e2a14;
+    --color-accent-600: #96682c;
+    --color-accent-700: #6f4d21;
+    --color-accent-800: #4a3316;
+    --color-accent-900: #2c1e0d;
+
+    --radius-panel: 1.25rem;
 }
 
 @layer base {
     html {
         -webkit-text-size-adjust: 100%;
+        /*
+         * Tells the browser to render its OWN widgets to match - the audio
+         * player, scrollbars, the select, checkboxes. Without it the native
+         * audio control stays a bright white pill on a near-black page, because
+         * it ignores the background of whatever contains it.
+         */
+        color-scheme: light;
+    }
+
+    html.dark {
+        color-scheme: dark;
     }
 
     body {
-        @apply bg-stone-100 text-stone-800 antialiased;
-        @apply dark:bg-stone-950 dark:text-stone-200;
+        @apply bg-sand-50 text-sand-700 antialiased;
+        @apply dark:bg-sand-950 dark:text-sand-300;
+        font-feature-settings: 'kern', 'liga';
     }
 
     /* Respect a reduced-motion preference rather than animating regardless. */
@@ -67,8 +91,12 @@
     }
 
     :focus-visible {
-        @apply ring-2 ring-accent-400 outline-none ring-offset-2 ring-offset-stone-100;
-        @apply dark:ring-offset-stone-950;
+        @apply ring-2 ring-accent-400 outline-none ring-offset-2 ring-offset-sand-50;
+        @apply dark:ring-offset-sand-950;
+    }
+
+    ::selection {
+        @apply bg-accent-200 text-sand-900;
     }
 }
 
@@ -79,97 +107,109 @@
      */
     .rtl-content {
         font-family: var(--font-arabic);
-        line-height: 1.95;
-    }
-
-    .surface {
-        @apply rounded-2xl border border-stone-200/80 bg-white;
-        @apply dark:border-stone-800 dark:bg-stone-900;
+        line-height: 1.9;
     }
 
     /*
-     * Repeats .surface rather than @apply-ing it: Tailwind 4's @apply only
-     * takes real utilities, not other custom classes.
+     * A panel, not a card: no border, barely a shadow. It lifts off the page
+     * just enough to group its contents.
      */
-    .card {
-        @apply rounded-2xl border border-stone-200/80 bg-white p-5 sm:p-6;
-        @apply dark:border-stone-800 dark:bg-stone-900;
+    .panel {
+        @apply rounded-[--radius-panel] bg-white p-5 sm:p-6;
+        box-shadow: 0 1px 2px rgb(28 25 23 / 0.04), 0 1px 12px rgb(28 25 23 / 0.03);
+        @apply dark:bg-sand-900 dark:shadow-none;
     }
 
-    /* Section labels: small, sans, tracked. Deliberately quiet. */
+    /* The one tinted panel on the page. */
+    .panel-accent {
+        @apply rounded-[--radius-panel] bg-accent-50 p-5 sm:p-6;
+        @apply dark:bg-accent-900/25;
+    }
+
+    /* Section labels. Small, wide, and deliberately easy to skip past. */
     .eyebrow {
-        @apply text-[11px] font-semibold tracking-[0.12em] text-stone-400 uppercase;
-        @apply dark:text-stone-500;
+        @apply text-[10.5px] font-semibold tracking-[0.14em] text-sand-400 uppercase;
+        @apply dark:text-sand-500;
     }
 
     .chip {
-        @apply inline-flex items-center rounded-lg border border-stone-200 bg-stone-50 px-2.5 py-1 text-sm;
-        @apply text-stone-700 dark:border-stone-700 dark:bg-stone-800/70 dark:text-stone-300;
+        @apply inline-flex items-center rounded-lg bg-sand-100 px-2.5 py-1 text-sm text-sand-700;
+        @apply dark:bg-sand-800 dark:text-sand-300;
     }
 
     .btn-primary {
-        @apply inline-flex items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-sm font-medium;
-        @apply transition-colors duration-200 disabled:cursor-not-allowed disabled:opacity-50;
-        @apply bg-stone-900 text-accent-100 hover:bg-stone-800;
-        @apply dark:bg-accent-300 dark:text-stone-950 dark:hover:bg-accent-200;
+        @apply inline-flex items-center justify-center gap-2 rounded-xl px-5 py-3 text-sm font-medium;
+        @apply transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-40;
+        @apply bg-sand-900 text-sand-50 hover:bg-sand-800;
+        @apply dark:bg-accent-300 dark:text-sand-950 dark:hover:bg-accent-200;
     }
 
     .btn-quiet {
-        @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-medium;
-        @apply transition-colors duration-200 disabled:cursor-not-allowed disabled:opacity-50;
-        @apply border border-stone-300 bg-transparent text-stone-600 hover:border-stone-400 hover:text-stone-900;
-        @apply dark:border-stone-700 dark:text-stone-400 dark:hover:border-stone-600 dark:hover:text-stone-100;
+        @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium;
+        @apply transition-colors duration-200 disabled:cursor-not-allowed disabled:opacity-40;
+        @apply bg-sand-100 text-sand-600 hover:bg-sand-200 hover:text-sand-900;
+        @apply dark:bg-sand-800/70 dark:text-sand-400 dark:hover:bg-sand-800 dark:hover:text-sand-100;
     }
 
     .field {
-        @apply w-full rounded-xl border border-stone-300 bg-white px-3.5 py-2.5 text-sm transition-colors;
-        @apply placeholder:text-stone-400 focus:border-accent-400 focus:outline-none;
-        @apply dark:border-stone-700 dark:bg-stone-900 dark:focus:border-accent-500;
+        @apply w-full rounded-xl bg-sand-100 px-4 py-3 text-sm text-sand-800 transition-colors;
+        @apply border border-transparent placeholder:text-sand-400;
+        @apply focus:border-accent-300 focus:bg-white focus:outline-none;
+        @apply dark:bg-sand-900 dark:text-sand-200 dark:focus:border-accent-600 dark:focus:bg-sand-900;
     }
 
     .label {
-        @apply mb-1.5 block text-sm font-medium text-stone-700 dark:text-stone-300;
+        @apply mb-2 block text-sm font-medium text-sand-700 dark:text-sand-300;
     }
 
     .hint {
-        @apply text-xs leading-relaxed text-stone-500 dark:text-stone-400;
+        @apply text-xs leading-relaxed text-sand-400 dark:text-sand-500;
     }
 
     /*
-     * Processing steps. The rail fills downward as steps complete; each step's
-     * marker and text transition rather than snapping, because this view is
-     * what people watch while they wait.
+     * Processing steps. The rail fills downward as steps complete, and markers
+     * transition rather than snapping - this is the view people sit and watch.
      */
     .step-marker {
-        @apply relative z-10 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 bg-stone-100;
-        @apply transition-all duration-500 ease-out dark:bg-stone-950;
+        @apply relative z-10 flex h-6 w-6 shrink-0 items-center justify-center rounded-full;
+        @apply transition-all duration-500 ease-out;
     }
 
     .step-pending {
-        @apply border-stone-200 text-transparent dark:border-stone-800;
+        @apply bg-sand-200 text-transparent dark:bg-sand-800;
     }
 
     .step-active {
-        @apply border-accent-400 text-accent-500 dark:border-accent-400 dark:text-accent-300;
+        @apply bg-accent-400 text-white dark:bg-accent-400 dark:text-sand-950;
     }
 
     .step-complete {
-        @apply border-accent-400 bg-accent-400 text-white dark:border-accent-400 dark:bg-accent-400 dark:text-stone-950;
+        @apply bg-accent-400 text-white dark:bg-accent-400 dark:text-sand-950;
     }
 
     .step-failed {
-        @apply border-red-400 text-red-500 dark:border-red-500 dark:text-red-400;
+        @apply bg-red-400 text-white dark:bg-red-500;
+    }
+
+    /* Native audio controls are dated; this softens them into the page. */
+    .player {
+        @apply w-full rounded-xl bg-sand-100 dark:bg-sand-900;
+        height: 44px;
+    }
+
+    .player::-webkit-media-controls-panel {
+        background: transparent;
     }
 }
 
 @utility animate-rise {
-    animation: rise 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
+    animation: rise 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 @keyframes rise {
     from {
         opacity: 0;
-        transform: translateY(6px);
+        transform: translateY(5px);
     }
     to {
         opacity: 1;
