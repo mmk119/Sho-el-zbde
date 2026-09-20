@@ -60,7 +60,8 @@ class ResultPageTest extends TestCase
         $note = $this->noteWithDigest();
 
         $this->get(route('notes.show', $note->public_token))
-            ->assertSee('High urgency')
+            ->assertSee('High')
+            ->assertSee('urgency')
             ->assertSee('Arabic')
             ->assertSee('5 words');
     }

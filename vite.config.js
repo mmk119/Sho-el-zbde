@@ -9,8 +9,13 @@ export default defineConfig({
             input: ['resources/css/app.css', 'resources/js/app.js'],
             refresh: true,
             fonts: [
+                // Interface: labels, buttons, metadata.
                 bunny('Instrument Sans', {
                     weights: [400, 500, 600],
+                }),
+                // Content: page titles and what the speaker actually said.
+                bunny('Instrument Serif', {
+                    weights: [400],
                 }),
             ],
         }),

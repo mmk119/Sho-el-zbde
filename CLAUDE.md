@@ -136,10 +136,10 @@ page flips to RTL when the detected language is Arabic (or any RTL script).
 | 1 | Laravel install, migrations, models, both endpoints, job chain stubbed | **complete** |
 | 2 | Real NormalizeAudio + TranscribeAudio behind `TranscriptionService` | **complete** |
 | 3 | AnalyzeTranscript with strict JSON validation behind `AnalysisService` | **complete** |
-| 4 | Livewire frontend: upload, progress, result | **complete** |
+| 4 | Livewire frontend: upload, progress, result | **complete** (design pass done) |
 | 5 | Polling the GET endpoint for progress | **done as part of Phase 4** |
 | 6 | Rate limits, expiry, cleanup job | **complete** (Horizon dropped, see below) |
-| 7 | Deployment | not started |
+| 7 | Deployment | **not started** — checklist at the bottom of this file |
 | — | *Optional later:* Reverb WebSockets, with polling kept as the fallback | deferred |
 | — | *Optional later:* Docker Compose | deferred |
 
@@ -154,46 +154,60 @@ wait. Ask before adding any package not already in `composer.json`.
 
 ### Built
 
-**Phase 0** — `transcribe-test.php`, the standalone Whisper probe. No framework,
-no composer. Reads `.env` itself, normalizes with the exact ffmpeg filter chain
-`NormalizeAudio` uses, reports language/timing/cost, flags RTL. Complete.
+Everything below exists, is tested, and has been exercised in a real browser.
 
-**Phase 1** — the Laravel app.
+**Phase 0 — `transcribe-test.php`.** Standalone Whisper probe. No framework, no
+composer. Reads `.env` itself, normalizes with the exact ffmpeg filter chain the
+app uses, reports language/timing/cost, flags RTL. Still useful for trying a new
+model or prompt without touching the app.
 
-- `composer.json` / `composer.lock` — Laravel 13 skeleton, no packages added
-  beyond what ships with it. Sanctum was deliberately NOT installed:
-  `routes/api.php` is registered by hand in `bootstrap/app.php` rather than via
-  `artisan install:api`, which would have pulled in a package nobody asked for.
-- `config/shoelzbde.php` — every limit, path and audio setting, all reading
-  `env()`. Nothing hardcoded in app code.
-- **Migrations** for `voice_notes`, `transcripts`, `digests`, `usage_logs`,
-  carrying both `duration_seconds` and `normalized_duration_seconds`, with the
-  reason for the split written into the migration itself.
-- **Models** `VoiceNote`, `Transcript`, `Digest`, `UsageLog`. `VoiceNote` mints
-  its own 40-hex-character token from `random_bytes` on create, defaults
-  `expires_at` to +30 days, and funnels every status change through
-  `markStatus()` / `markFailed()` so no job invents its own transition.
-- **Enums** `VoiceNoteStatus` and `Urgency`, replacing loose strings.
-  `isTerminal()` is what stops a late job reopening a finished or failed note.
-- **`AudioInspector` contract + `FfprobeAudioInspector`**, bound in
-  `AudioServiceProvider`. Needed because the duration limit has to be checked
-  before dispatch, and that means probing the original upload. Behind an
-  interface like every other external tool.
-- **Both endpoints**, plus `GET /api/voice-notes/{token}/audio` so `audio_url`
-  in the payload resolves to something real.
-- **The four jobs chained** via `Bus::chain`, each sleeping 2s and advancing
-  status. Shared behaviour lives in the `TracksVoiceNoteProgress` trait:
-  skip terminal notes, and write a readable sentence on failure rather than
-  exception text.
-- **29 tests, 74 assertions, all passing.** Four job classes share
-  `JobChainTestCase`, which asserts the three things every job must do rather
-  than copying them four times.
+**Phase 1 — the Laravel app.** Laravel 13 skeleton. `config/shoelzbde.php` holds
+every limit, path and audio setting, all reading `env()`. Migrations and models
+for `voice_notes`, `transcripts`, `digests`, `usage_logs`. `VoiceNote` mints a
+40-hex-character token from `random_bytes`, defaults `expires_at`, and funnels
+every status change through `markStatus()` / `markFailed()`. Enums for status and
+urgency. Both API endpoints plus `GET /api/voice-notes/{token}/audio`. The four
+jobs chained via `Bus::chain`, sharing `TracksVoiceNoteProgress`.
+
+**Phase 2 — real audio and transcription.** `FfmpegAudioNormalizer` behind
+`AudioNormalizer`: mono 16kHz pcm_s16le, silence trimmed at 1.5s/-40dB.
+`OpenAiTranscriptionService` behind `TranscriptionService`, with a mandatory
+prompt enforced in three places. Errors sorted into rate-limited / unavailable /
+rejected. `usage_logs` opened at upload, closed at transcription.
+
+**Phase 3 — the digest.** `OpenAiAnalysisService` behind `AnalysisService`,
+`gpt-4o`. `DigestSchema` validates before anything is stored; one stricter
+re-ask on a schema failure, then give up with the transcript preserved.
+`AnalysisPrompt` carries the Phase 0 findings, including the real corruption
+examples and the detected language.
+
+**Phase 4 — the frontend.** Livewire 4. Upload page with drag and drop, language
+dropdown and the optional names field. Processing view with four steps and a
+filling rail, polling every 3s. Result page at `/r/{token}` with the digest and
+transcript together. RTL from `language_detected`, dark mode, mobile first.
+Styled 404/410/500/503 pages.
+
+**Phase 6 — safe to run.** Per-IP throttle counted from `usage_logs`. Expiry
+enforced at read time (410 from the API, a plain page on the web). `zbde:purge`
+scheduled daily, deleting both audio files and the note. The normalized wav is
+deleted as soon as transcription succeeds.
+
+**169 tests, 364 assertions.** Including five that drive the real ffmpeg binary,
+and a suite covering the three failure modes end to end.
 
 ### Not built
 
-Phase 7, deployment. `NotifyReady` is still a sleep that flips the note to
-`done` — it sends nothing, which is fine while polling is the delivery
-mechanism.
+- **Phase 7, deployment.** No Dockerfile, no deploy script, no CI, no server
+  config. Checklist at the bottom of this file.
+- **`NotifyReady` sends nothing.** It flips the note to `done` and that is all,
+  which is correct while polling is the delivery mechanism. If email or push is
+  ever wanted, that is where it goes.
+- **No accounts.** `user_id` is nullable everywhere and nothing populates it.
+  Every note is anonymous, and the share token is the entire access model.
+- **No Reverb, no Docker, no Horizon.** All three were deliberately dropped —
+  see the decisions log. Polling replaced Reverb, Docker was dropped from the
+  plan, and Horizon needs Redis which this project does not use.
+- **`transcripts.segments` is stored but unused.** Nothing reads it, by design.
 
 ### Toolchain (installed 2026-09-19)
 
@@ -657,3 +671,118 @@ audio route, and its page shows the retention message with no digest.
 Note for later: notes created before this phase still have their normalized wav
 on disk, since nothing deleted it at the time. The purge job clears them when
 they expire.
+
+---
+
+## The design system
+
+Committed to in the Phase 4 design pass. If you change one thing, change it
+here rather than adding a second way of doing it.
+
+**Warm, not cool.** "Zbde" is butter, so the accent is an ochre/gold ramp
+(`--color-accent-50` through `900` in `resources/css/app.css`) and the neutrals
+are `stone`, not `slate`. There is no blue anywhere.
+
+**One accent, spent carefully.** Gold marks only: the gist and the questions on
+the result page, a high-urgency badge, the primary button, focus rings, and the
+filling rail on the processing view. Everything else is neutral. Spend it in
+more places and it stops meaning anything.
+
+**Two typefaces with separate jobs.**
+
+| Face | Used for |
+| --- | --- |
+| Instrument Serif | page titles, the summary, the questions, the transcript |
+| Instrument Sans | everything that is interface: labels, buttons, metadata, eyebrows |
+
+Neither has Arabic glyphs, so RTL content switches to a system Arabic stack
+(`--font-arabic`) and gets more line height. That is what `.rtl-content` is for.
+
+**Hierarchy on the result page is deliberate.** The gist is the largest text on
+the page and comes first. The questions sit immediately under it in the only
+tinted card. The audio player, key details, action items and transcript are all
+below and visibly quieter. The filename and metadata are small grey text at the
+top, not a heading — the digest is the headline.
+
+**Direction flips content, not interface.** Eyebrows, buttons and the metadata
+line stay LTR even on an Arabic note, because they are chrome rather than
+something the speaker said.
+
+**Motion is small and purposeful.** The step rail fills over 700ms, step markers
+transition over 500ms, newly revealed content rises 6px. There is a
+`prefers-reduced-motion` block that turns all of it off.
+
+### Tailwind 4 gotcha, hit twice
+
+`@apply` only takes real utilities, never another custom class. `.card { @apply
+surface }` fails the build with `Cannot apply unknown utility class`. The shared
+declarations are repeated instead. This bit once in Phase 4 and again in the
+design pass despite being written down — so it is now written down twice.
+
+---
+
+## The closing bug sweep
+
+Every flow driven in a real headless browser at 390px: upload, processing, done,
+failed, expired, rate limited, and a token that does not exist. **Zero console
+errors and zero failed requests on every page**, apart from the deliberate 404.
+Zero horizontal overflow everywhere.
+
+Also exercised, all behaving: submitting with no file, a non-audio file, a zero
+byte file, refreshing mid-processing, pressing back after an upload, and the
+same result open in two tabs (both polled to completion independently).
+
+Audio was verified to actually work rather than merely exist: metadata loads,
+playback advances, and seeking to 118s lands at 119s.
+
+Arabic renders RTL and English LTR, each confirmed in both themes, with the
+correct font stack in each.
+
+**Two things the sweep found and fixed:**
+
+1. **The 404 page was Laravel's default.** Unstyled white page in the middle of
+   a deliberate design. Now there are styled 404, 410, 500 and 503 pages sharing
+   one partial.
+2. **The urgency badge said only "HIGH"**, which is meaningless to a screen
+   reader. It now carries an `sr-only` "urgency" alongside the word.
+
+This is the third time in this project that the only way to find something was
+to open the page and look. Worth remembering.
+
+---
+
+## Phase 7, when you come back to it
+
+Nothing here is started. Rough order:
+
+1. **Decide where it runs.** A single small VPS is enough — this is PHP, SQLite
+   and ffmpeg. The whole design assumes one box; `onOneServer()` on the schedule
+   is the only concession to more.
+2. **Server prerequisites:** PHP 8.3 with `curl`, `mbstring`, `openssl`,
+   `pdo_sqlite`, `fileinfo`, `zip`; ffmpeg and ffprobe on PATH; a web server
+   pointed at `public/`.
+3. **Production `.env`:** `APP_ENV=production`, `APP_DEBUG=false`, a fresh
+   `APP_KEY`, a real `APP_URL` (the share links are built from it), and the
+   OpenAI key. Set `DB_DATABASE` to an absolute path **outside** the web root.
+4. **Build step:** `composer install --no-dev --optimize-autoloader`,
+   `npm ci && npm run build`, `php artisan migrate --force`, then
+   `config:cache`, `route:cache`, `view:cache`. Note that caching config means
+   `env()` outside config files stops working — this project already routes
+   everything through `config()`, so it should be clean, but verify.
+5. **Two long-running processes**, both needing a supervisor (systemd or
+   supervisord): `queue:work` — without it nothing is ever processed — and
+   `schedule:run` every minute via cron, which is what triggers `zbde:purge`.
+6. **HTTPS is not optional.** The clipboard API needs a secure context, so Copy
+   digest and Share link silently do nothing over plain HTTP.
+7. **Upload size limits in two more places:** `upload_max_filesize` and
+   `post_max_size` in `php.ini`, and `client_max_body_size` in nginx. The app
+   limit is 100MB; if the server's is lower the user gets a confusing failure
+   before Laravel ever sees the request.
+8. **Back up the SQLite file.** It is one file, which makes this easy, and
+   easy to forget.
+9. **Think about cost before it is public.** There is no spend cap — the per-IP
+   throttle is the only brake, and `usage_logs` is the only record. A daily
+   total query is worth writing.
+
+Optional, deferred earlier, still open: Reverb for live progress with polling as
+the fallback, and Docker Compose.
