@@ -185,6 +185,6 @@ class ViewNote extends Component
 
     public function render()
     {
-        return view('livewire.view-note')->title($this->note->original_filename.' — Sho el Zbde');
+        return view('livewire.view-note')->title($this->note->original_filename.' · Sho el Zbde');
     }
 }

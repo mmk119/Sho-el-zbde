@@ -1,5 +1,5 @@
 @include('layouts.app', [
-    'title' => 'Gone — Sho el Zbde',
+    'title' => 'Gone · Sho el Zbde',
     'slot' => new \Illuminate\Support\HtmlString(
         view('errors.partials.message', [
             'heading' => "This one's gone",

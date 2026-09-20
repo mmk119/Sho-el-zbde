@@ -1,5 +1,5 @@
 @include('layouts.app', [
-    'title' => 'Not found — Sho el Zbde',
+    'title' => 'Not found · Sho el Zbde',
     'slot' => new \Illuminate\Support\HtmlString(
         view('errors.partials.message', [
             'heading' => "There's nothing here",

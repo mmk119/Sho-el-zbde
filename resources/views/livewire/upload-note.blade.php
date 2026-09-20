@@ -4,7 +4,7 @@
             Nobody has time for a<br class="hidden sm:block"> nine minute voice note.
         </h1>
         <p class="mt-4 max-w-lg leading-relaxed text-stone-600 dark:text-stone-400">
-            Drop one in and get back the part you actually needed — the gist, what they
+            Drop one in and get back the part you actually needed: the gist, what they
             asked you, and the details worth writing down.
         </p>
     </div>
@@ -92,8 +92,8 @@
                     @endforeach
                 </select>
                 <p class="hint mt-2">
-                    Auto detect works well. Pick the language if you know it &mdash; it's
-                    what unlocks the dialect vocabulary for Arabic.
+                    Auto detect works well. Picking the language is what unlocks the
+                    dialect vocabulary for Arabic.
                 </p>
             </div>
 
@@ -109,7 +109,7 @@
                     maxlength="500"
                     placeholder="Teta Mariam, Jounieh"
                 >
-                <p class="hint mt-2">Helps get proper nouns right — the single biggest win.</p>
+                <p class="hint mt-2">Helps get proper nouns right, and it's the single biggest win.</p>
             </div>
         </div>
 

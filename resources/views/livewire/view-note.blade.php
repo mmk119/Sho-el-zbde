@@ -185,7 +185,7 @@
                     </ul>
                 @else
                     <p class="text-sm text-accent-800/70 dark:text-accent-200/60">
-                        Nothing to answer — they didn't ask you anything directly.
+                        Nothing to answer. They didn't ask you anything directly.
                     </p>
                 @endif
             </section>

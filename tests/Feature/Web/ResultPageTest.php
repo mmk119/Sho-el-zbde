@@ -77,7 +77,7 @@ class ResultPageTest extends TestCase
         $without = $this->noteWithDigest(['questions' => []]);
 
         $this->get(route('notes.show', $without->public_token))
-            ->assertSee("they didn't ask you anything directly", false);
+            ->assertSee("They didn't ask you anything directly", false);
     }
 
     /** Quiet by design: a small line, never an error state. */
