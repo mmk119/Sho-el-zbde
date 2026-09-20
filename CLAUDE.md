@@ -863,3 +863,43 @@ believed broken.
 queue:restart` asks running workers to stop after their current job; a
 supervisor then starts fresh ones. This belongs in the deploy sequence, not just
 in local habit - added to the Phase 7 checklist.
+
+---
+
+## Where the time actually goes
+
+Measured on a 3:00 mp3, per job, with the API calls real:
+
+| Step | Time | |
+| --- | --- | --- |
+| NormalizeAudio | 987 ms | ffmpeg, local |
+| **TranscribeAudio** | **13,657 ms** | the Whisper call, ~70% of the work |
+| AnalyzeTranscript | 2,817 ms | the digest |
+| NotifyReady | 2,049 ms | a leftover Phase 1 `sleep(2)`, now removed |
+
+Work totalled 19.5s, but wall clock was 40-55s. **The missing half was the
+queue worker idling**, not the pipeline. `queue:work` defaults to `--sleep=3`,
+and the chain hands off three times, so up to nine seconds went on nothing.
+
+Three changes, no quality cost:
+
+- removed the `sleep(2)` from `NotifyReady` (it does no work - polling is how
+  the reader finds out, so there is nothing to send)
+- run the worker with `--sleep=1`
+- poll interval 3s to 2s, which is how fast a finished note reaches the eye
+
+**End to end: 24.6s, from roughly 40-55s.** Transitions land at 2.1s queued,
+4.7s transcribing, 22.5s analyzing, 24.6s done.
+
+What is left is mostly irreducible: ~14s of that 24.6s is the Whisper call
+itself. Further gains would have to come from a different model, and would be
+a quality decision rather than a plumbing one:
+
+- `gpt-4o-mini-transcribe` is faster than `whisper-1` but returns no segments,
+  and is untested on Lebanese dialect - the one thing Phase 0 established is
+  that dialect performance cannot be assumed.
+- `gpt-4o-mini` for analysis would cut ~2s and most of the cost, at unknown
+  cost to digest quality on code-switched Arabic.
+
+Neither should be changed without running the Phase 0 probe against real
+dialect audio first.

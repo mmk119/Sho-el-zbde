@@ -9,9 +9,13 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 
 /**
- * Phase 1 stub. The last link in the chain: this is what flips a note to done.
- * Phase 5 adds the progress notification; the GET endpoint is what the frontend
- * polls until then.
+ * The last link in the chain, and the only job that marks a note done.
+ *
+ * It does no work: polling is how the reader finds out, so there is nothing to
+ * send. It stays a separate job because "finished" is a real step that wants
+ * its own status transition, and because anything that should happen on
+ * completion - an email, a push - belongs here rather than bolted onto
+ * AnalyzeTranscript.
  */
 class NotifyReady implements ShouldQueue
 {
@@ -31,8 +35,6 @@ class NotifyReady implements ShouldQueue
         if ($note === null || $this->shouldSkip($note)) {
             return;
         }
-
-        sleep(2);
 
         $this->advance($note, VoiceNoteStatus::Done);
     }

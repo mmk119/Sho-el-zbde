@@ -137,13 +137,18 @@ php artisan serve
 ```
 
 ```bash
-php artisan queue:work
+php artisan queue:work --sleep=1
 ```
 
 **Both are required.** The upload returns instantly by design, so without a
 worker your note sits at `pending` forever.
 
 Open <http://127.0.0.1:8000> and drop in a voice note.
+
+`--sleep=1` matters more than it looks. The chain hands off between four jobs,
+and the worker's default idle gap is three seconds, so the default spends up to
+nine seconds doing nothing between steps. On a three minute note that is about
+a third of the total wait.
 
 ### Windows: one extra step
 
@@ -162,7 +167,7 @@ openssl.cafile = "C:\path\to\cacert.pem"
 php artisan test
 ```
 
-169 tests. Five drive the real ffmpeg binary; the rest fake every external
+177 tests. Five drive the real ffmpeg binary; the rest fake every external
 service, so the suite makes no network calls and costs nothing to run.
 
 ---
