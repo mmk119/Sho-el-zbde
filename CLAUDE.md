@@ -22,7 +22,7 @@ Someone sends a 9 minute voice note, you upload it here, and you get back:
 
 | Piece | Choice |
 | --- | --- |
-| Framework | Laravel 12, PHP 8.3 |
+| Framework | Laravel 13, PHP 8.3 |
 | Database | SQLite (single file) |
 | Queues | Laravel database queue driver |
 | Queue monitoring | Laravel Horizon |
@@ -136,8 +136,8 @@ page flips to RTL when the detected language is Arabic (or any RTL script).
 | 1 | Laravel install, migrations, models, both endpoints, job chain stubbed | **complete** |
 | 2 | Real NormalizeAudio + TranscribeAudio behind `TranscriptionService` | **complete** |
 | 3 | AnalyzeTranscript with strict JSON validation behind `AnalysisService` | **complete** |
-| 4 | Livewire frontend: upload, progress, result | not started |
-| 5 | Polling the GET endpoint for progress | not started |
+| 4 | Livewire frontend: upload, progress, result | **complete** |
+| 5 | Polling the GET endpoint for progress | **done as part of Phase 4** |
 | 6 | Rate limits, expiry, cleanup job, Horizon | not started |
 | 7 | Deployment | not started |
 | — | *Optional later:* Reverb WebSockets, with polling kept as the fallback | deferred |
@@ -160,7 +160,7 @@ no composer. Reads `.env` itself, normalizes with the exact ffmpeg filter chain
 
 **Phase 1** — the Laravel app.
 
-- `composer.json` / `composer.lock` — Laravel 12 skeleton, no packages added
+- `composer.json` / `composer.lock` — Laravel 13 skeleton, no packages added
   beyond what ships with it. Sanctum was deliberately NOT installed:
   `routes/api.php` is registered by hand in `bootstrap/app.php` rather than via
   `artisan install:api`, which would have pulled in a package nobody asked for.
@@ -191,8 +191,9 @@ no composer. Reads `.env` itself, normalizes with the exact ffmpeg filter chain
 
 ### Not built
 
-Phases 4–7. `NotifyReady` is still a sleep that flips the note to `done`. No
-frontend, no rate limiting, no expiry enforcement, no cleanup job, no Horizon.
+Phases 6–7. `NotifyReady` is still a sleep that flips the note to `done` — it
+sends nothing, which is fine while polling is the delivery mechanism. No rate
+limiting, no expiry enforcement, no cleanup job, no Horizon, no deployment.
 
 ### Toolchain (installed 2026-09-19)
 
@@ -482,3 +483,92 @@ same إقليمية corruption the prompt warns about, behaving exactly as inten
 second entry was a fragment with mixed Latin and Arabic characters, which is the
 model quoting something it could not read. Worth an eyeball in Phase 4 to decide
 how such fragments should be displayed, since they are meaningless to a reader.
+
+---
+
+## Phase 4 decisions
+
+### Correction: this is Laravel 13, not 12
+
+`composer create-project laravel/laravel` installed **13.32.0** — current stable
+at the time — and Phases 1–3 were reported as "Laravel 12". The brief asked for
+12. Nothing built so far depends on the difference, but the stack table and the
+Phase 1 note have been corrected rather than left wrong.
+
+### Packages
+
+**`livewire/livewire` 4.4 was installed.** It is the one package added beyond
+the skeleton, and it was named in the brief from the start. Tailwind 4 and Vite
+already ship with Laravel, so styling added nothing.
+
+Two things about Livewire 4 that differ from the v3 documentation most people
+have in their heads:
+
+- **The layout lives at `resources/views/layouts/app.blade.php`**, not
+  `resources/views/components/layouts/app.blade.php`. v4 defaults to
+  `'component_layout' => 'layouts::app'`, a view *namespace* pointing at
+  `resources/views/layouts`. The v3 path fails with
+  `No hint path defined for [layouts]`, which does not obviously mean "wrong
+  directory".
+- Alpine still ships with it, so the drag-and-drop, copy buttons, collapsible
+  transcript and checklist need no extra dependency.
+
+**Tailwind 4's `@apply` only takes real utilities, not other custom classes.**
+`.btn-primary { @apply btn ... }` fails the build with
+`Cannot apply unknown utility class`. The shared button base is repeated in each
+variant instead.
+
+### Structure
+
+- **`App\Actions\CreateVoiceNote` is now the single place a note enters the
+  system.** Both the JSON API and the Livewire form go through it, so the two
+  cannot drift on what is stored, logged or dispatched. Validation stays with
+  each caller, because each reports failure differently.
+- **`App\Support\UploadRules` holds the limits** for the same reason. The web
+  form and the API enforce identical size, type and duration rules, all still
+  checked against the original upload before dispatch.
+- **One Livewire component covers processing and result**, because they are the
+  same URL at different moments. It polls only while the note is non-terminal.
+- **The four steps are derived from `status`, not stored.** A note processed
+  before this page existed still renders correctly, and there is no new column
+  to keep in sync.
+
+### Presentation
+
+- **RTL is driven by `language_detected`**, with a script-detection fallback on
+  the transcript for notes where detection returned null. It flips the digest
+  and transcript only — headings, chips labels and the button row stay LTR,
+  because they are interface, not content.
+- **Dark mode is class-based** with a pre-paint inline script, so a dark-mode
+  user never sees a white flash. The toggle beats the system preference and
+  persists in `localStorage`.
+- **`notes` renders exactly as asked**: a collapsed line reading "Some parts
+  were unclear (n)", entries small and secondary, never an error state. Per the
+  Phase 3 finding, no attempt is made to clean up unreadable fragments — the
+  transcript is on the same page to check against.
+- **The digest and transcript are on one page**, which is the direct consequence
+  of the Phase 3 language bug: a structurally valid digest can still be wrong,
+  and the only way a reader catches that is by seeing both.
+- **Action item ticks are `localStorage` only**, keyed by token, and the UI says
+  so. They are a convenience, not shared state — anyone with the link would
+  otherwise see someone else's checkmarks.
+
+### A bug the tests would not have caught
+
+The audio route used `Storage::download()`, which sends
+`Content-Disposition: attachment` and no `Accept-Ranges`. Every test passed and
+the endpoint returned 200, but an `<audio>` element pointing at it would try to
+download the file rather than play it, and could not seek without pulling the
+whole thing first.
+
+Found by opening the page and looking at the response headers. Now served with
+`response()->file()`: inline disposition, `Accept-Ranges: bytes`, and a Range
+request returns `206 Partial Content`. There are tests for all three now.
+
+### Verified in a real browser
+
+Headless run against the actual app: upload page and result page both render
+with zero console errors and zero failed requests; a real mp3 was picked,
+uploaded through Livewire, submitted, redirected to `/r/{token}`, polled through
+the processing steps, and arrived at an Arabic digest. Dark mode at a 390px
+viewport has zero horizontal overflow.

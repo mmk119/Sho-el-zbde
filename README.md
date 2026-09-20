@@ -13,11 +13,11 @@ to check the machine's work.
 
 ---
 
-> ### ⚠️ Status: the API works end to end, there's no web page yet
+> ### ⚠️ Status: usable
 >
-> Upload a voice note and you get back a real digest — summary, questions,
-> entities, urgency — over HTTP. **There is no frontend.** Everything below is
-> built and tested; you drive it with `curl` for now.
+> Upload a voice note in the browser and you get back a digest. What's missing
+> is the operational layer — no rate limiting, no expiry enforcement, nothing
+> deleting old audio yet — so don't put it on the open internet.
 
 ---
 
@@ -87,19 +87,29 @@ touch database/database.sqlite      # set DB_DATABASE to its absolute path in .e
 php artisan migrate
 ```
 
+Build the frontend assets:
+
+```bash
+npm install && npm run build
+```
+
 Then, in two terminals:
 
 ```bash
 php artisan serve
-php artisan queue:work
+php artisan queue:work      # nothing processes without this
 ```
 
-Upload something:
+Open <http://127.0.0.1:8000>, drop in a voice note, and watch it work.
+
+### Or drive it over HTTP
+
+The web UI and the API share the same intake path, so either works:
 
 ```bash
 curl -X POST http://127.0.0.1:8000/api/voice-notes \
   -H 'Accept: application/json' \
-  -F 'file=@note.m4a' -F 'language_hint=ar'
+  -F 'file=@note.m4a' -F 'language_hint=ar' \n  -F 'prompt_hint=Teta Mariam, Jounieh'
 ```
 
 That returns a token. Poll it and watch the status move:
@@ -145,6 +155,23 @@ Failures are sorted into three kinds, because they deserve different treatment:
 The job runs under a 30-minute window rather than a fixed attempt count, with a
 budget of three real errors. Being told to wait repeatedly is fine; failing
 three times is not. Rate limiting doesn't spend the error budget.
+
+## What you get
+
+The result page lives at `/r/{token}` and puts everything in one place:
+
+- **El Zbde** — the gist, in three to five bullets
+- **Questions for you** — highlighted, because it's what people open this for
+- **Key details** — dates, times, amounts, names and places as chips
+- **Things to do** — a checklist, ticks saved in your browser
+- a quiet line if parts were unclear, and the **full transcript**, collapsed
+
+The digest and the transcript sit on the same page on purpose. A digest can be
+confidently wrong, and the transcript is how you catch it.
+
+The page flips to right-to-left when the detected language calls for it, and
+follows your system dark mode with a manual toggle. Built mobile first, because
+a voice note usually arrives on a phone.
 
 ## The digest
 
@@ -202,7 +229,7 @@ Some constraints that are deliberate rather than accidental:
 
 ## Stack
 
-Laravel 12 · PHP 8.3 · SQLite · Livewire · ffmpeg · Whisper
+Laravel 13 · PHP 8.3 · SQLite · Livewire · Tailwind · ffmpeg · Whisper
 
 Deliberately boring, and deliberately cheap to start.
 

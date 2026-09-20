@@ -14,7 +14,8 @@ use App\Models\VoiceNote;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Storage;
-use Symfony\Component\HttpFoundation\StreamedResponse;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
+use Symfony\Component\HttpFoundation\HeaderUtils;
 
 class VoiceNoteController extends Controller
 {
@@ -66,10 +67,25 @@ class VoiceNoteController extends Controller
         );
     }
 
-    public function audio(VoiceNote $voiceNote): StreamedResponse
+    /**
+     * The original upload, served for the player on the result page.
+     *
+     * Inline rather than as a download, and via response()->file() so Symfony
+     * answers Range requests - without that the player cannot seek and has to
+     * pull the whole file before it will scrub, which is painful on a 20 minute
+     * note over a phone connection.
+     */
+    public function audio(VoiceNote $voiceNote): BinaryFileResponse
     {
         abort_unless(Storage::exists($voiceNote->storage_path), 404);
 
-        return Storage::download($voiceNote->storage_path, $voiceNote->original_filename);
+        return response()->file(Storage::path($voiceNote->storage_path), [
+            'Content-Disposition' => HeaderUtils::makeDisposition(
+                HeaderUtils::DISPOSITION_INLINE,
+                $voiceNote->original_filename,
+                // ASCII fallback for clients that cannot read the UTF-8 form.
+                'audio'.pathinfo($voiceNote->original_filename, PATHINFO_EXTENSION),
+            ),
+        ]);
     }
 }
