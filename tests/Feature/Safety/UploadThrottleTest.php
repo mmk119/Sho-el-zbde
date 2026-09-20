@@ -115,6 +115,30 @@ class UploadThrottleTest extends TestCase
             ->assertCreated();
     }
 
+    /**
+     * The obvious reading of "0 uploads per hour" is "none allowed", and the
+     * >= comparison would have delivered exactly that. Zero means off.
+     */
+    public function test_setting_the_limit_to_zero_turns_the_throttle_off(): void
+    {
+        config(['shoelzbde.anon_uploads_per_hour' => 0]);
+
+        $this->seedUploads(50);
+
+        $this->postJson(route('voice-notes.store'), ['file' => $this->audio()])
+            ->assertCreated();
+    }
+
+    public function test_a_negative_limit_also_means_off_rather_than_locked_out(): void
+    {
+        config(['shoelzbde.anon_uploads_per_hour' => -1]);
+
+        $this->seedUploads(50);
+
+        $this->postJson(route('voice-notes.store'), ['file' => $this->audio()])
+            ->assertCreated();
+    }
+
     public function test_the_raw_ip_is_never_stored(): void
     {
         $this->postJson(route('voice-notes.store'), ['file' => $this->audio()])->assertCreated();

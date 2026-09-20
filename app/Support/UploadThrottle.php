@@ -39,8 +39,25 @@ final class UploadThrottle
             ->count();
     }
 
+    /**
+     * Zero or less turns the throttle off entirely.
+     *
+     * Worth being explicit about, because the obvious reading of
+     * ANON_UPLOADS_PER_HOUR=0 is "no uploads allowed" - and the comparison
+     * below would have delivered exactly that, locking everyone out of a
+     * setting that looks like it disables a limit.
+     */
+    public static function enabled(): bool
+    {
+        return self::perHour() > 0;
+    }
+
     public static function exceeded(?string $ip, ?int $userId = null): bool
     {
+        if (! self::enabled()) {
+            return false;
+        }
+
         return self::used($ip, $userId) >= self::perHour();
     }
 
