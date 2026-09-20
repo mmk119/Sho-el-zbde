@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Jobs;
 
+use App\Contracts\AnalysisService;
 use App\Contracts\AudioNormalizer;
 use App\Contracts\TranscriptionService;
 use App\Enums\VoiceNoteStatus;
@@ -9,6 +10,7 @@ use App\Models\VoiceNote;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Storage;
 use RuntimeException;
+use Tests\Support\FakeAnalysisService;
 use Tests\Support\FakeAudioNormalizer;
 use Tests\Support\FakeTranscriptionService;
 use Tests\TestCase;
@@ -36,6 +38,7 @@ abstract class JobChainTestCase extends TestCase
 
         $this->app->bind(AudioNormalizer::class, fn () => new FakeAudioNormalizer());
         $this->app->bind(TranscriptionService::class, fn () => new FakeTranscriptionService());
+        $this->app->bind(AnalysisService::class, fn () => new FakeAnalysisService());
     }
 
     /** @return class-string */

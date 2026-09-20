@@ -42,6 +42,7 @@ class VoiceNoteResource extends JsonResource
                 // not an error.
                 'notes' => $this->digest->notes ?? [],
                 'urgency' => $this->digest->urgency->value,
+                'model_used' => $this->digest->model_used,
             ]),
         ];
     }

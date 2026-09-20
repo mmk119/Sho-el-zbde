@@ -3,8 +3,10 @@
 namespace App\Providers;
 
 use App\Contracts\AudioInspector;
+use App\Contracts\AnalysisService;
 use App\Contracts\AudioNormalizer;
 use App\Contracts\TranscriptionService;
+use App\Services\Analysis\OpenAiAnalysisService;
 use App\Services\Audio\FfmpegAudioNormalizer;
 use App\Services\FfprobeAudioInspector;
 use App\Services\Transcription\OpenAiTranscriptionService;
@@ -42,6 +44,18 @@ class AudioServiceProvider extends ServiceProvider
             ),
             default => throw new InvalidArgumentException(
                 'Unknown transcription driver: '.config('shoelzbde.transcription.driver')
+            ),
+        });
+
+        $this->app->bind(AnalysisService::class, fn () => match (config('shoelzbde.analysis.driver')) {
+            'openai' => new OpenAiAnalysisService(
+                apiKey: (string) config('shoelzbde.openai.key'),
+                baseUrl: (string) config('shoelzbde.openai.base_url'),
+                model: (string) config('shoelzbde.analysis.model'),
+                timeoutSeconds: (int) config('shoelzbde.analysis.timeout_seconds'),
+            ),
+            default => throw new InvalidArgumentException(
+                'Unknown analysis driver: '.config('shoelzbde.analysis.driver')
             ),
         });
     }

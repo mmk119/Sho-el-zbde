@@ -135,7 +135,7 @@ page flips to RTL when the detected language is Arabic (or any RTL script).
 | 0 | `transcribe-test.php` — standalone Whisper quality probe | **complete** |
 | 1 | Laravel install, migrations, models, both endpoints, job chain stubbed | **complete** |
 | 2 | Real NormalizeAudio + TranscribeAudio behind `TranscriptionService` | **complete** |
-| 3 | AnalyzeTranscript with strict JSON validation behind `AnalysisService` | not started |
+| 3 | AnalyzeTranscript with strict JSON validation behind `AnalysisService` | **complete** |
 | 4 | Livewire frontend: upload, progress, result | not started |
 | 5 | Polling the GET endpoint for progress | not started |
 | 6 | Rate limits, expiry, cleanup job, Horizon | not started |
@@ -191,9 +191,8 @@ no composer. Reads `.env` itself, normalizes with the exact ffmpeg filter chain
 
 ### Not built
 
-Phases 3–7. `AnalyzeTranscript` and `NotifyReady` are still sleeps — no LLM is
-called anywhere. No frontend, no rate limiting, no expiry enforcement, no
-cleanup job, no Horizon.
+Phases 4–7. `NotifyReady` is still a sleep that flips the note to `done`. No
+frontend, no rate limiting, no expiry enforcement, no cleanup job, no Horizon.
 
 ### Toolchain (installed 2026-09-19)
 
@@ -244,9 +243,11 @@ The real use case is a phone voice note with background noise. Not yet tested.
   plain `json`, so segments are unavailable there. If Phase 0 shows gpt-4o
   transcribing Lebanese Arabic noticeably better, we need a decision on whether
   segments are worth keeping — they are currently only used for display.
-- **Analysis provider is unchosen.** `.env.example` lists Anthropic vars as a
-  placeholder because the brief only says "an LLM API". Settle this in Phase 3;
-  either way it sits behind `AnalysisService` so it is a binding change.
+- **Analysis provider settled in Phase 3: OpenAI**, `gpt-4o`. Chosen because it
+  is the key that exists in `.env` — `ANTHROPIC_API_KEY` was never filled in, so
+  an Anthropic driver could not have been run or tested. This is an availability
+  decision, not a quality judgement. `AnalysisService` and the driver switch are
+  provider-agnostic; adding Anthropic is a new class plus a `match` arm.
 - **The API key was pasted into chat in plaintext**, prefixed `VITE_`. It is
   compromised and must be rotated. `VITE_`-prefixed vars are bundled into
   client-side JS by Vite and shipped to every browser — an OpenAI key must never
@@ -413,3 +414,71 @@ The real use case is a phone voice note with background noise. Not yet tested.
   trimming saved nothing, exactly as the Phase 0 finding predicted for
   continuous speech. The column is doing its job; it simply is not always
   smaller. Do not treat equality as a bug.
+
+---
+
+## Phase 3 decisions
+
+- **Provider is OpenAI `gpt-4o`**, for the reason above: it is the key that
+  exists. The interface takes a transcript, a language and a stricter flag —
+  nothing OpenAI-shaped — so the swap stays a binding change.
+- **Validation lives in `DigestSchema`, not in the driver.** Whichever provider
+  is bound, the same rules apply. The driver's only job is to return what the
+  model said, decoded, plus a `wasUnparseable` flag.
+- **Strict about structure, lenient about taste.** A missing key or wrong type
+  is a rejection. Bullet *count* is not: "3 to 5 bullets" is an instruction in
+  the prompt, and failing a genuinely short note for producing two bullets would
+  turn a good digest into a failed note. The upper rail is 50 items per list, as
+  a guard against a runaway response.
+- **`notes` is required even when empty**, and there is a dedicated test saying
+  so. An omitted `notes` is indistinguishable from "the transcript was perfectly
+  clear", which is exactly the confusion the field exists to prevent.
+- **Two kinds of retry, kept separate.** Transport errors are the queue's
+  problem, on the Phase 2 discipline (30 minute window, 3 exceptions, 429
+  releases). Schema failures are handled *inside a single run*: one stricter
+  re-ask, then give up. Bouncing the whole job for a shape problem would re-send
+  the transcript and pay for it again for no reason.
+- **The stricter re-ask talks only about shape.** It says "do not change your
+  findings, only fix the shape", so a retry cannot quietly rewrite the digest's
+  meaning while fixing a missing key.
+- **Failed attempts are still billed.** `askTwiceAtMost()` accumulates cost and
+  tokens across both passes, because we are charged for the rejected one too.
+  Hiding that would make the analysis line item wrong.
+- **`usage_logs` splits the cost by step.** `transcription_cost` is per minute of
+  audio, `analysis_cost` is per token, and `cost_estimate` is kept as the running
+  total so nothing that already reads it breaks.
+- **Nothing in the analysis path logs.** The transcript and the prompt both carry
+  private content and a response body can echo either back, so error messages
+  carry a status code and nothing else. There is a test asserting a 400's body
+  does not reach the exception.
+
+### The language bug, found by running it
+
+The first live run produced a structurally valid digest whose summary was **in
+English**, summarising Arabic speech. Schema validation passed, because shape
+was never the problem.
+
+The prompt did say "write summary and questions in the SAME LANGUAGE the speaker
+used". That was not enough. What fixed it was **naming the detected language**:
+the prompt now says "The speaker is speaking arabic. Write summary and questions
+in arabic", built from `voice_notes.language_detected` and threaded through the
+interface as a real parameter.
+
+Two lessons worth keeping:
+
+1. A general instruction about language loses to a specific one. If a rule
+   matters, name the value rather than describing the rule.
+2. **Schema validation cannot catch a semantic failure.** Every key was present
+   and correctly typed. Structure and correctness are different things, and only
+   reading the output caught it. Phase 4 should show the digest next to the
+   transcript for exactly this reason.
+
+Confirmed fixed on a re-run: the summary came back in Arabic, no Latin words.
+
+### What the live run showed about `notes`
+
+The model routed `عوامل إقرمية` into `notes` rather than guessing — that is the
+same إقليمية corruption the prompt warns about, behaving exactly as intended. A
+second entry was a fragment with mixed Latin and Arabic characters, which is the
+model quoting something it could not read. Worth an eyeball in Phase 4 to decide
+how such fragments should be displayed, since they are meaningless to a reader.

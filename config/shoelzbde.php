@@ -91,6 +91,24 @@ return [
         'cost_per_minute_usd' => (float) env('TRANSCRIPTION_COST_PER_MINUTE_USD', 0.006),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Analysis
+    |--------------------------------------------------------------------------
+    |
+    | Priced per token rather than per minute, which is why usage_logs keeps the
+    | two steps apart.
+    |
+    */
+
+    'analysis' => [
+        'driver' => env('ANALYSIS_DRIVER', 'openai'),
+        'model' => env('ANALYSIS_MODEL', 'gpt-4o'),
+        'timeout_seconds' => (int) env('ANALYSIS_TIMEOUT', 180),
+        'cost_per_million_input_usd' => (float) env('ANALYSIS_COST_PER_MILLION_INPUT_USD', 2.50),
+        'cost_per_million_output_usd' => (float) env('ANALYSIS_COST_PER_MILLION_OUTPUT_USD', 10.00),
+    ],
+
     'openai' => [
         'key' => env('OPENAI_API_KEY'),
         'base_url' => env('OPENAI_BASE_URL', 'https://api.openai.com/v1'),

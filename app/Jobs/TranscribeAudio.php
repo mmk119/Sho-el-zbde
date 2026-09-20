@@ -130,14 +130,16 @@ class TranscribeAudio implements ShouldQueue
 
         $perMinute = (float) config('shoelzbde.transcription.cost_per_minute_usd');
 
-        UsageLog::updateOrCreate(
-            ['voice_note_id' => $note->id],
-            [
-                'user_id' => $note->user_id,
-                'duration_seconds' => $seconds,
-                'cost_estimate' => round(($seconds / 60) * $perMinute, 6),
-            ],
-        );
+        $cost = round(($seconds / 60) * $perMinute, 6);
+
+        $log = UsageLog::firstOrNew(['voice_note_id' => $note->id]);
+
+        $log->user_id ??= $note->user_id;
+        $log->duration_seconds = $seconds;
+        $log->transcription_cost = $cost;
+        // cost_estimate is the running total across steps; analysis adds to it.
+        $log->cost_estimate = round($cost + (float) ($log->analysis_cost ?? 0), 6);
+        $log->save();
     }
 
     protected function failureMessage(): string

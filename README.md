@@ -13,13 +13,11 @@ to check the machine's work.
 
 ---
 
-> ### ⚠️ Status: it transcribes, it doesn't summarise yet
+> ### ⚠️ Status: the API works end to end, there's no web page yet
 >
-> Upload, normalization and transcription are real — send a voice note and you
-> get back a transcript with the detected language. **The digest is not built
-> yet**: the analysis step is still a placeholder, so `summary`, `questions`
-> and the rest come back empty. Everything else documented here works and is
-> tested.
+> Upload a voice note and you get back a real digest — summary, questions,
+> entities, urgency — over HTTP. **There is no frontend.** Everything below is
+> built and tested; you drive it with `curl` for now.
 
 ---
 
@@ -147,6 +145,45 @@ Failures are sorted into three kinds, because they deserve different treatment:
 The job runs under a 30-minute window rather than a fixed attempt count, with a
 budget of three real errors. Being told to wait repeatedly is fine; failing
 three times is not. Rate limiting doesn't spend the error budget.
+
+## The digest
+
+The analysis step is told, in the prompt, that it is reading a machine
+transcript rather than a document — and that errors cluster on proper nouns,
+code-switched words, and numbers said quickly. It's given real examples of that
+from this project's own testing.
+
+Where a garbled word is recoverable from context, it recovers it. Where it
+genuinely can't tell, it puts the passage in `notes` instead of guessing:
+
+```json
+{
+  "summary":      ["..."],
+  "questions":    ["..."],
+  "entities":     { "dates": [], "times": [], "amounts": [], "names": [], "places": [] },
+  "action_items": ["..."],
+  "urgency":      "low | normal | high",
+  "notes":        ["passages that couldn't be made out"]
+}
+```
+
+**A wrong name is worse than an admitted gap.** That's the whole design of this
+step.
+
+Every key is required on every response, `notes` included — an absent `notes` is
+indistinguishable from a clean transcript, which defeats the point of having it.
+Output is validated against the schema before anything is stored. If it fails,
+the model gets exactly one stricter re-ask about the *shape* — explicitly not
+about the findings — and if that also fails the note is marked failed with the
+transcript kept.
+
+Summary and questions come back in the language the speaker actually used. That
+one needs the detected language named explicitly in the prompt; a general "use
+the speaker's language" instruction produced English summaries of Arabic speech.
+
+Costs are recorded per step in `usage_logs`, since transcription is billed per
+minute of audio and analysis per token, and a single total hides which one is
+driving the bill.
 
 ## Design rules
 

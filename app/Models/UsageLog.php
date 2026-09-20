@@ -17,6 +17,9 @@ class UsageLog extends Model
         return [
             'duration_seconds' => 'integer',
             'cost_estimate' => 'decimal:6',
+            'transcription_cost' => 'decimal:6',
+            'analysis_cost' => 'decimal:6',
+            'analysis_tokens' => 'integer',
         ];
     }
 
