@@ -21,13 +21,30 @@
 @endphp
 
 <div
-    @if ($this->isWorking())
+    @if ($this->isWorking() && ! $note->isExpired())
         wire:poll.{{ config('shoelzbde.poll_interval_seconds') }}s="refreshNote"
     @endif
 >
 
+    {{-- ──────────────────────────────  EXPIRED  ────────────────────────────── --}}
+    @if ($note->isExpired())
+
+        <div class="mb-6">
+            <h1 class="text-xl font-semibold tracking-tight">This one's gone</h1>
+        </div>
+
+        <div class="card">
+            <p class="text-sm leading-relaxed text-stone-600 dark:text-stone-400">
+                Voice notes and their digests are deleted after
+                {{ config('shoelzbde.retention_days') }} days. This one has passed that,
+                so the audio, the transcript and the digest are no longer here.
+            </p>
+        </div>
+
+        <a href="{{ route('upload') }}" wire:navigate class="btn-quiet mt-5">Send a new one</a>
+
     {{-- ─────────────────────────────  PROCESSING  ───────────────────────────── --}}
-    @if ($note->status !== VoiceNoteStatus::Done && $note->status !== VoiceNoteStatus::Failed)
+    @elseif ($note->status !== VoiceNoteStatus::Done && $note->status !== VoiceNoteStatus::Failed)
 
         <div class="mb-6">
             <h1 class="text-xl font-semibold tracking-tight">Working on it</h1>

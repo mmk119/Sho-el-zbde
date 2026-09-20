@@ -60,11 +60,31 @@ class VoiceNoteController extends Controller
         ], 201);
     }
 
-    public function show(VoiceNote $voiceNote): VoiceNoteResource
+    public function show(VoiceNote $voiceNote): VoiceNoteResource|JsonResponse
     {
+        if ($voiceNote->isExpired()) {
+            return $this->gone();
+        }
+
         return new VoiceNoteResource(
             $voiceNote->load(['transcript', 'digest'])
         );
+    }
+
+    /**
+     * 410 rather than 404: the link was real, it has simply passed its
+     * retention date. Saying so is more useful than pretending it never
+     * existed, and it carries no content.
+     */
+    private function gone(): JsonResponse
+    {
+        return response()->json([
+            'status' => 'expired',
+            'message' => sprintf(
+                'This voice note has passed its %d day retention window and has been deleted.',
+                config('shoelzbde.retention_days'),
+            ),
+        ], 410);
     }
 
     /**
@@ -77,6 +97,7 @@ class VoiceNoteController extends Controller
      */
     public function audio(VoiceNote $voiceNote): BinaryFileResponse
     {
+        abort_if($voiceNote->isExpired(), 410);
         abort_unless(Storage::exists($voiceNote->storage_path), 404);
 
         return response()->file(Storage::path($voiceNote->storage_path), [

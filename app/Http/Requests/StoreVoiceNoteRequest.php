@@ -3,6 +3,7 @@
 namespace App\Http\Requests;
 
 use App\Contracts\AudioInspector;
+use App\Support\UploadThrottle;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Validator;
 
@@ -44,6 +45,12 @@ class StoreVoiceNoteRequest extends FormRequest
         return [
             function (Validator $validator) {
                 if ($validator->errors()->isNotEmpty() || ! $this->hasFile('file')) {
+                    return;
+                }
+
+                if (UploadThrottle::exceeded($this->ip(), $this->user()?->id)) {
+                    $validator->errors()->add('file', UploadThrottle::message($this->ip(), $this->user()?->id));
+
                     return;
                 }
 

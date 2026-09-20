@@ -1,8 +1,15 @@
 <?php
 
-use Illuminate\Foundation\Inspiring;
-use Illuminate\Support\Facades\Artisan;
+use App\Console\Commands\PurgeExpiredNotes;
+use Illuminate\Support\Facades\Schedule;
 
-Artisan::command('inspire', function () {
-    $this->comment(Inspiring::quote());
-})->purpose('Display an inspiring quote');
+/*
+ * Audio is deleted after the retention window. Daily is frequent enough: the
+ * result page already refuses to serve an expired note, so this is about
+ * reclaiming disk and honouring the promise in the footer, not about access
+ * control.
+ */
+Schedule::command(PurgeExpiredNotes::class)
+    ->dailyAt('03:30')
+    ->onOneServer()
+    ->withoutOverlapping();

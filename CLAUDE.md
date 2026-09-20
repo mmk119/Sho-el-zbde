@@ -138,7 +138,7 @@ page flips to RTL when the detected language is Arabic (or any RTL script).
 | 3 | AnalyzeTranscript with strict JSON validation behind `AnalysisService` | **complete** |
 | 4 | Livewire frontend: upload, progress, result | **complete** |
 | 5 | Polling the GET endpoint for progress | **done as part of Phase 4** |
-| 6 | Rate limits, expiry, cleanup job, Horizon | not started |
+| 6 | Rate limits, expiry, cleanup job | **complete** (Horizon dropped, see below) |
 | 7 | Deployment | not started |
 | — | *Optional later:* Reverb WebSockets, with polling kept as the fallback | deferred |
 | — | *Optional later:* Docker Compose | deferred |
@@ -191,9 +191,9 @@ no composer. Reads `.env` itself, normalizes with the exact ffmpeg filter chain
 
 ### Not built
 
-Phases 6–7. `NotifyReady` is still a sleep that flips the note to `done` — it
-sends nothing, which is fine while polling is the delivery mechanism. No rate
-limiting, no expiry enforcement, no cleanup job, no Horizon, no deployment.
+Phase 7, deployment. `NotifyReady` is still a sleep that flips the note to
+`done` — it sends nothing, which is fine while polling is the delivery
+mechanism.
 
 ### Toolchain (installed 2026-09-19)
 
@@ -572,3 +572,88 @@ with zero console errors and zero failed requests; a real mp3 was picked,
 uploaded through Livewire, submitted, redirected to `/r/{token}`, polled through
 the processing steps, and arrived at an Arabic digest. Dark mode at a 390px
 viewport has zero horizontal overflow.
+
+---
+
+## Phase 6 decisions
+
+### Horizon was dropped, not forgotten
+
+The original phase list said "rate limits, expiry, cleanup job, Horizon".
+**Horizon only supervises Redis queues.** This project moved to the database
+queue driver in the 2026-09-19 stack simplification, so there is nothing for it
+to attach to — installing it would add a package that could not run.
+
+If `QUEUE_CONNECTION=redis` ever happens, Horizon becomes worth adding at the
+same time. Until then `queue:work` plus the `failed_jobs` table is the whole
+story, and `php artisan queue:failed` is how you look at it.
+
+### Rate limiting
+
+- **Counted from `usage_logs`, not from the cache.** The rows are already
+  written at upload time, so there is one source of truth rather than two things
+  that can disagree. It also survives a cache flush — a throttle you can reset
+  by restarting the cache is not really a throttle.
+- **Only anonymous uploads are throttled.** Signed-in users are identifiable;
+  the IP hash exists precisely for people who are not.
+- **The refusal says what happened and when to come back**, with the wait
+  computed from when the oldest upload in the window falls out of it — not a
+  generic "too many requests". It arrives as a validation error on the `file`
+  field, so the web form shows it in place like any other upload problem.
+
+### Expiry
+
+- **Enforced when the note is read, not by a sweep.** A note has to stop being
+  readable the moment it expires, regardless of when the cleanup job last ran.
+  The job reclaims disk on its own schedule; it is not the access control.
+- **410 Gone, not 404.** The link was real and has simply passed its retention
+  date. Saying so is more useful than pretending it never existed, and the
+  response carries no content.
+- **The page shows nothing of the note** — no filename, no digest, no
+  transcript, no audio. There is a test asserting the transcript does not leak
+  through the expired page.
+
+### Cleanup
+
+- `php artisan zbde:purge`, scheduled daily at 03:30, `withoutOverlapping()` and
+  `onOneServer()` so it stays sane if this is ever deployed more than once.
+  `--dry-run` reports without deleting.
+- Deletes **both** files: the original and the normalized wav, for notes where
+  the latter still exists.
+- **`usage_logs` rows survive, with `voice_note_id` nulled.** The cost history
+  outlives the content deliberately — those rows carry a hashed IP, a duration
+  and a price, and nothing anybody said. Losing them would also reset the
+  throttle count every time the purge ran.
+
+### The normalized wav is deleted as soon as transcription succeeds
+
+It is uncompressed 16kHz PCM, reliably larger than the compressed original it
+came from, and it has no purpose once the text exists. The original stays: it is
+what the result page plays back and what `duration_seconds` was measured
+against. `normalized_duration_seconds` is untouched, so the billing number
+outlives the file it was measured from.
+
+**This needed an idempotency guard.** `TranscribeAudio` failed a note when the
+normalized file was missing, which after this change is also what a *successful*
+re-run looks like. The job now returns early if a transcript already exists, so
+a retry cannot fail a note whose transcript is sitting right there — and cannot
+pay for a second transcription either. There are tests for both.
+
+### Failure modes
+
+All three are now driven through the real job and read back off the result page:
+bad audio, a transcription rejection, and an analysis schema failure that
+survives the stricter retry. Each asserts the same two things — a readable
+sentence appears, and the provider's own error text does not. The analysis case
+additionally asserts the transcript is still shown, because a digest that could
+not be validated does not make the transcription worthless.
+
+### Verified live
+
+Schedule registers (`30 3 * * *`). `zbde:purge --dry-run` runs clean against the
+real database. An expired note returns 410 from both the JSON endpoint and the
+audio route, and its page shows the retention message with no digest.
+
+Note for later: notes created before this phase still have their normalized wav
+on disk, since nothing deleted it at the time. The purge job clears them when
+they expire.

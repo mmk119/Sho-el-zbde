@@ -13,11 +13,11 @@ to check the machine's work.
 
 ---
 
-> ### ⚠️ Status: usable
+> ### Status: working
 >
-> Upload a voice note in the browser and you get back a digest. What's missing
-> is the operational layer — no rate limiting, no expiry enforcement, nothing
-> deleting old audio yet — so don't put it on the open internet.
+> Upload a voice note in the browser and you get back a digest. Rate limiting,
+> retention and cleanup are in place. Deployment configuration is the last
+> piece — there's no Dockerfile or deploy script here yet.
 
 ---
 
@@ -211,6 +211,42 @@ the speaker's language" instruction produced English summaries of Arabic speech.
 Costs are recorded per step in `usage_logs`, since transcription is billed per
 minute of audio and analysis per token, and a single total hides which one is
 driving the bill.
+
+## Keeping it safe to run
+
+Some of this is a private link on the internet, so a few things are handled
+rather than assumed:
+
+**Anonymous uploads are rate limited per IP**, counted from the usage rows the
+app already writes rather than a separate cache tally — one source of truth,
+and it survives a cache flush. Hitting the limit gets you a sentence saying how
+many you've sent and roughly when to try again, not a generic error page. Only
+a hashed IP is ever stored.
+
+**Notes expire.** After the retention window the page says so plainly and the
+API returns `410 Gone`. That's enforced when the note is read, not by waiting
+for a cleanup job — a note stops being readable the moment it expires, whenever
+the sweep last ran.
+
+**A scheduled job deletes the audio**, both the original and the normalized
+copy, along with the transcript and digest:
+
+```bash
+php artisan zbde:purge --dry-run   # see what would go
+php artisan zbde:purge
+```
+
+It runs daily at 03:30 from the scheduler. Usage rows survive the purge with
+their link to the note removed — they hold a hashed IP, a duration and a price,
+so the cost history outlives the content without keeping any of it.
+
+**The normalized audio is deleted the moment transcription succeeds.** It's
+uncompressed 16kHz PCM, larger than the original it came from, and useless once
+the text exists. The original is kept so you can always play it back and check.
+
+**Failures explain themselves.** A note that dies at any step shows a readable
+sentence rather than an empty digest, and never the provider's error text. If
+the transcript survived but the summary didn't, you still get the transcript.
 
 ## Design rules
 

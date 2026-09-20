@@ -65,6 +65,17 @@ class TranscribeAudio implements ShouldQueue
             return;
         }
 
+        /*
+         * Already transcribed. The normalized wav is deleted on success, so a
+         * re-run must not mistake "the file is gone" for "the file is missing"
+         * and fail a note whose transcript is sitting right there.
+         */
+        if ($note->transcript !== null) {
+            $this->advance($note, VoiceNoteStatus::Analyzing);
+
+            return;
+        }
+
         $path = $note->normalized_storage_path;
 
         if ($path === null || ! Storage::exists($path)) {
@@ -94,7 +105,33 @@ class TranscribeAudio implements ShouldQueue
 
         $this->store($note, $result);
 
+        $this->discardNormalizedAudio($note);
+
         $this->advance($note, VoiceNoteStatus::Analyzing);
+    }
+
+    /**
+     * The normalized wav has done its job the moment we have the text, and it
+     * is the larger of the two files - uncompressed 16kHz PCM against a
+     * compressed original. The original stays: it is what the result page plays
+     * back and what duration_seconds was measured against.
+     *
+     * normalized_duration_seconds is untouched, so the billing number survives
+     * the file it was measured from.
+     */
+    private function discardNormalizedAudio(VoiceNote $note): void
+    {
+        $path = $note->normalized_storage_path;
+
+        if ($path === null) {
+            return;
+        }
+
+        if (Storage::exists($path)) {
+            Storage::delete($path);
+        }
+
+        $note->forceFill(['normalized_storage_path' => null])->save();
     }
 
     private function store(VoiceNote $note, TranscriptionResult $result): void

@@ -4,6 +4,7 @@ namespace App\Livewire;
 
 use App\Actions\CreateVoiceNote;
 use App\Support\UploadRules;
+use App\Support\UploadThrottle;
 use Illuminate\Http\UploadedFile;
 use Livewire\Attributes\Validate;
 use Livewire\Component;
@@ -52,6 +53,12 @@ class UploadNote extends Component
     public function save(CreateVoiceNote $create)
     {
         $this->validate();
+
+        if (UploadThrottle::exceeded(request()->ip(), auth()->id())) {
+            $this->addError('file', UploadThrottle::message(request()->ip(), auth()->id()));
+
+            return null;
+        }
 
         /** @var UploadedFile $upload */
         $upload = $this->file;

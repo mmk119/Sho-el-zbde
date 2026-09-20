@@ -64,6 +64,17 @@ class VoiceNote extends Model
     }
 
     /**
+     * Past its retention date. Enforced when the note is read, not by a
+     * background sweep - the cleanup job reclaims disk on its own schedule, and
+     * a note must stop being readable the moment it expires regardless of when
+     * that job last ran.
+     */
+    public function isExpired(): bool
+    {
+        return $this->expires_at !== null && $this->expires_at->isPast();
+    }
+
+    /**
      * Single funnel for status changes so no job invents its own transition and
      * nothing reopens a note that already finished or failed.
      */
